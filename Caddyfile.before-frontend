@@ -1,0 +1,3 @@
+work.lhdreamcity.com {
+    respond "工作间正在部署中" 200
+}

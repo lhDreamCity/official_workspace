@@ -1,0 +1,18 @@
+const teamStyle=document.createElement('link');teamStyle.rel='stylesheet';teamStyle.href='team.css';document.head.append(teamStyle);
+content.insertAdjacentHTML('beforeend',`<section id="team" class="page" hidden>${pageHeader('TEAM WORK JOURNAL','看看同事的进展。','全员可看已完成记录，草稿仅本人可见。每个人只能修改自己的记录。')}<div class="team-toolbar"><label>记录日期<input id="team-date" type="date" aria-label="团队记录日期"></label><label class="team-name-label">同事姓名<input id="team-name" type="search" maxlength="80" placeholder="搜索同事姓名" aria-label="搜索同事姓名"></label><button class="button secondary" id="team-all-dates" type="button">全部日期</button><button class="button secondary" id="team-refresh" type="button">刷新记录</button></div><div id="team-count" class="scope-note" aria-live="polite"></div><div id="team-list"></div><button id="team-more" class="button secondary" type="button" hidden>加载更多</button></section>`);
+content.append(document.querySelector('.site-footer'));
+let teamRows=[],teamGeneration=0,teamBusy=false,teamTimer;
+$('team-date').value=localDay();$('team-date').max=localDay();
+function renderTeam(){
+ $('team-list').innerHTML=teamRows.length?teamRows.map(r=>`<article class="history-card card team-card"><div class="history-head"><div><h2>${esc(r.name)} ${r.mine?'<span class="status-pill done">我</span>':''}</h2><small>${esc(r.date)} · ${recordSummary(r)}</small></div><span class="status-pill done">已完成</span></div>${r.items.map(i=>`<div class="history-row"><span>${esc(i.text)}${i.blocker?`<span class="history-blocker"><b>阻碍说明</b>${esc(i.blocker)}</span>`:''}</span><small>${esc(i.progress)} · ${i.hours===''?'未填耗时':esc(i.hours)+' 小时'}</small></div>`).join('')}${r.blockers?`<div class="history-note"><b>遇到的问题</b><br>${esc(r.blockers)}</div>`:''}${r.next?`<div class="history-note"><b>下一步计划</b><br>${esc(r.next)}</div>`:''}${r.mine?`<div class="team-own-action"><button class="text-button" data-team-own="${esc(r.id)}">查看 / 修改我的记录 ↗</button></div>`:''}</article>`).join(''):'<div class="empty-state"><h2>暂无符合条件的已完成记录</h2><p>同事点击“完成记录”保存后，会出现在这里。可切换日期或清空姓名筛选。</p></div>';
+ document.querySelectorAll('[data-team-own]').forEach(b=>b.onclick=()=>{const r=teamRows.find(r=>r.mine&&r.id===b.dataset.teamOwn);if(r&&openRecord(r))location.hash='today';});wireRecordDeletion();
+}
+async function loadTeam(more=false){
+ if(more&&teamBusy)return;const generation=++teamGeneration;teamBusy=true;$('team-more').disabled=true;
+ if(!more){teamRows=[];$('team-list').textContent='正在读取团队记录…';$('team-more').hidden=true;}
+ const query=new URLSearchParams({date:$('team-date').value,name:$('team-name').value.trim(),offset:String(more?teamRows.length:0)});
+ try{const data=await window.Workroom.api('/api/team-records?'+query);if(generation!==teamGeneration)return;teamRows=more?[...teamRows,...data.records]:data.records;renderTeam();$('team-count').textContent=`共 ${data.total} 份已完成记录 · 已显示 ${teamRows.length} 份`;$('team-more').hidden=!data.hasMore;}catch(e){if(generation!==teamGeneration)return;$('team-count').textContent=e.message;if(!more){$('team-list').textContent='未能读取团队记录，请点击“刷新记录”重试。';}else{toast(e.message);}}finally{if(generation===teamGeneration){teamBusy=false;$('team-more').disabled=false;}}
+}
+$('team-date').onchange=()=>loadTeam();$('team-name').oninput=()=>{clearTimeout(teamTimer);teamTimer=setTimeout(()=>loadTeam(),250);};$('team-all-dates').onclick=()=>{$('team-date').value='';loadTeam();};$('team-refresh').onclick=()=>loadTeam();$('team-more').onclick=()=>loadTeam(true);
+const routeBeforeTeam=route;window.removeEventListener('hashchange',routeBeforeTeam);
+route=function(){routeBeforeTeam();if(document.body.dataset.page==='team')loadTeam();};window.addEventListener('hashchange',route);route();

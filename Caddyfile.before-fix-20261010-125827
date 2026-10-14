@@ -1,0 +1,18 @@
+lhdreamcity.com, www.lhdreamcity.com {
+    reverse_proxy dreamcity-web:3000
+}
+
+work.lhdreamcity.com {
+    handle /api/* {
+        reverse_proxy app:3000
+    }
+    handle /auth/* {
+        reverse_proxy app:3000
+    }
+    handle {
+        root * /srv
+        encode gzip
+        header Cache-Control "no-cache"
+        file_server
+    }
+}

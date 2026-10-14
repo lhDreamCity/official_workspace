@@ -1,0 +1,47 @@
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - default
+      - proxy
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./public:/srv:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+  app:
+    image: node:24-bookworm-slim
+    restart: unless-stopped
+    working_dir: /app
+    command: ["node", "server.mjs"]
+    env_file:
+      - path: ./app.env
+        format: raw
+    volumes:
+      - ./backend:/app:ro
+      - app_data:/data
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+networks:
+  proxy:
+    external: true
+    name: proxy
+
+volumes:
+  caddy_data:
+  caddy_config:
+  app_data:
