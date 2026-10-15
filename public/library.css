@@ -77,6 +77,48 @@
 .lib-preview-meta{font-size:12px;color:#829ab1;margin-top:4px}
 .lib-preview-body{padding:18px;overflow:auto}
 .lib-pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-word;color:#243b53;margin:0}
+/* Markdown 渲染视图：对齐 Obsidian 阅读模式的排版语言（正文 700px 行宽、属性面板、行内代码、引用块、双链、标签） */
+.lib-md{max-width:700px;margin:0 auto;font-size:16px;line-height:1.65;color:#2e3338;word-wrap:break-word;
+ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif}
+.lib-md>*:first-child{margin-top:0}
+.md-props{display:flex;flex-wrap:wrap;gap:8px 24px;padding:10px 14px;margin:0 0 22px;background:#f8f9fb;border:1px solid #e8e8ec;border-radius:8px}
+.md-prop{display:flex;gap:8px;align-items:baseline;font-size:13px}
+.md-prop span{color:#8b8fa3}
+.md-prop b{font-weight:600;color:#3d4048}
+.lib-md h1{font-size:1.8em;font-weight:700;line-height:1.3;margin:1.4em 0 .6em}
+.lib-md h2{font-size:1.55em;font-weight:600;line-height:1.3;margin:1.4em 0 .5em}
+.lib-md h3{font-size:1.32em;font-weight:600;margin:1.2em 0 .4em}
+.lib-md h4{font-size:1.15em;font-weight:600;margin:1.1em 0 .3em}
+.lib-md h5{font-size:1em;font-weight:600;margin:1em 0 .3em}
+.lib-md h6{font-size:.9em;font-weight:600;color:#6b7280;margin:1em 0 .3em}
+.lib-md p{margin:.85em 0}
+.lib-md ul,.lib-md ol{padding-left:1.6em;margin:.6em 0}
+.lib-md li{margin:.3em 0}
+.lib-md li::marker{color:#8b8fa3}
+.lib-md li input[type=checkbox]{width:auto!important;height:auto!important;min-width:0!important;max-width:none!important;
+ margin:0 .5em 0 0;vertical-align:middle;display:inline-block;accent-color:#7f6df2}
+.lib-md li:has(>input[type=checkbox]){list-style:none;padding-left:1.5em;margin-left:0;text-indent:0}
+.lib-md li:has(>input[type=checkbox]) input[type=checkbox]{margin-left:-1.45em}
+.lib-md blockquote{margin:1em 0;padding:.1em 0 .1em 1em;border-left:3px solid #d8d8de;color:#5f6472}
+.lib-md blockquote p{margin:.5em 0}
+.lib-md a{color:#705dcf;text-decoration:none}
+.lib-md a:hover{text-decoration:underline}
+.lib-md code{background:#f2f3f5;color:#d6336c;border-radius:4px;padding:.15em .4em;font-size:.88em;
+ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Courier New",monospace}
+.lib-md pre{background:#f5f6f8;border-radius:8px;padding:14px 16px;overflow:auto;margin:1em 0;line-height:1.5}
+.lib-md pre code{background:none;color:#2e3338;padding:0;font-size:13.5px;border-radius:0}
+.lib-md hr{border:none;border-top:1px solid #e2e3e7;margin:1.8em 0}
+.lib-md img{max-width:100%;border-radius:6px;display:block;margin:1em auto}
+.lib-md table{border-collapse:collapse;margin:1em 0;font-size:.94em;display:block;max-width:100%;overflow:auto}
+.lib-md th,.lib-md td{border:1px solid #e2e3e7;padding:6px 12px}
+.lib-md th{background:#f7f8fa;font-weight:600;text-align:left}
+.lib-md mark{background:#ffec99;color:inherit;padding:0 2px;border-radius:2px}
+.lib-md .md-tag{background:rgba(127,109,242,.12);color:#705dcf;border-radius:999px;padding:1px 8px;font-size:.9em;white-space:nowrap}
+.lib-md .md-wikilink{color:#705dcf;background:rgba(127,109,242,.1);border-radius:4px;padding:0 3px;cursor:pointer}
+.lib-md .md-wikilink:hover{text-decoration:underline}
+.lib-preview-card{max-width:940px}
+.lib-preview-body{padding:22px 26px}
+
 @media (max-width:860px){
  .lib-layout{grid-template-columns:1fr}
  .lib-tree{max-height:220px}

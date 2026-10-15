@@ -190,6 +190,52 @@
   document.querySelectorAll('#lib-list [data-preview]').forEach(el=>el.onclick=()=>preview(el.dataset.preview));
  }
 
+ // ---- Markdown 渲染（贴近 Obsidian 阅读视图） ----
+ const isMd=n=>/\.(md|markdown)$/i.test(n);
+ const FM_LABEL={title:'标题',author:'作者',date:'日期',updated:'更新',tags:'标签',tag:'标签',source:'来源',summary:'摘要'};
+ function splitFm(text){ // 剥离 frontmatter，渲染成属性面板（Obsidian 的 properties）
+  if(!text.startsWith('---'))return{meta:null,body:text};
+  const end=text.indexOf('\n---',3);
+  if(end===-1)return{meta:null,body:text};
+  const raw=text.slice(3,end).trim(),nl=text.indexOf('\n',end+1);
+  const meta={};
+  for(const line of raw.split('\n')){
+   const m=line.match(/^([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
+   if(m)meta[m[1].toLowerCase()]=m[2].trim().replace(/^["']|["']$/g,'');
+  }
+  return{meta:Object.keys(meta).length?meta:null,body:nl===-1?'':text.slice(nl+1)};
+ }
+ const obsidian=text=>text
+  .replace(/%%[\s\S]*?%%/g,'')                                   // Obsidian 注释：不显示
+  .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,(m,t,l)=>          // 双链 [[目标|别名]]
+   `<span class="md-wikilink" data-wiki="${esc(t.trim())}">${esc((l||t).trim())}</span>`)
+  .replace(/==([^=\n]+)==/g,'<mark>$1</mark>');                   // 高亮 ==文字==
+ function renderMd(raw){
+  const{meta,body}=splitFm(raw);
+  const html=window.marked?window.marked.parse(obsidian(body),{gfm:true,breaks:true})
+   :`<pre class="lib-pre">${esc(body)}</pre>`;
+  const clean=window.DOMPurify?window.DOMPurify.sanitize(html,{ADD_ATTR:['data-wiki','align','disabled','checked'],ADD_TAGS:['mark','input']}):html;
+  const props=meta?`<div class="md-props">${Object.entries(meta).map(([k,v])=>
+   `<div class="md-prop"><span>${esc(FM_LABEL[k]||k)}</span><b>${esc(v)}</b></div>`).join('')}</div>`:'';
+  return `<div class="lib-md">${props}${clean}</div>`;
+ }
+ function decorateMd(body){ // 渲染后处理：代码高亮、标签样式、双链跳转
+  if(window.hljs)body.querySelectorAll('pre code').forEach(el=>{try{window.hljs.highlightElement(el);}catch{/* 未知语言忽略 */}});
+  const walker=document.createTreeWalker(body,NodeFilter.SHOW_TEXT,{acceptNode:n=>
+   /#[\w\u4e00-\u9fa5\/-]+/.test(n.nodeValue)&&!n.parentElement.closest('pre,code,a,.md-tag')?NodeFilter.FILTER_ACCEPT:NodeFilter.FILTER_REJECT});
+  const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+  for(const n of nodes){ // #标签 → 圆角标签（Obsidian 特征）
+   const frag=document.createDocumentFragment();let last=0,text=n.nodeValue,m;
+   const re=/(^|\s)(#[\w\u4e00-\u9fa5\/-]+)/g;
+   while((m=re.exec(text))){frag.append(text.slice(last,m.index)+m[1]);
+    const sp=document.createElement('span');sp.className='md-tag';sp.textContent=m[2];frag.append(sp);last=m.index+m[0].length;}
+   if(last){frag.append(text.slice(last));n.replaceWith(frag);}
+  }
+  body.querySelectorAll('.md-wikilink').forEach(el=>el.onclick=()=>{ // 点击双链 → 全库搜索该名称
+   const t=el.dataset.wiki;$id('lib-search').value=t;query=t.toLowerCase();
+   $id('lib-preview').hidden=true;renderMain();
+  });
+ }
  // ---- 预览 ----
  async function preview(rel){
   const name=rel.split('/').pop(),k=kindOf(name);
@@ -198,6 +244,12 @@
   const body=$id('lib-preview-body');body.innerHTML='加载中…';$id('lib-preview').hidden=false;
   try{
    if(k==='image')body.innerHTML=`<img src="/api/library/file?path=${encodeURIComponent(rel)}" alt="${esc(name)}" style="max-width:100%;border-radius:8px">`;
+   else if(isMd(name)){
+    const r=await fetch('/api/library/file?path='+encodeURIComponent(rel));
+    if(!r.ok)throw Error((await r.json().catch(()=>({}))).error||'预览失败');
+    body.innerHTML=renderMd(await r.text());
+    decorateMd(body);
+   }
    else if(k==='doc'||k==='file'){
     const r=await fetch('/api/library/file?path='+encodeURIComponent(rel));
     if(!r.ok)throw Error((await r.json().catch(()=>({}))).error||'预览失败');
