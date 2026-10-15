@@ -40,7 +40,19 @@ const server = http.createServer(async (req, res) => {
         if (req.headers.origin !== ORIGIN || !equal(req.headers['x-csrf-token'], user.csrf))
           throw Object.assign(new Error('请求验证失败，请刷新页面后重试。'), {status: 403});
       }
-      if (await handleLibrary({path: p, method: req.method, req, res, respond, user})) return;
+      let body = null;
+      if (req.method === 'POST' && p !== '/api/upload') { // 文件操作类接口用 JSON body（上传走 multipart）
+        const chunks = [];
+        let size = 0;
+        for await (const c of req) {
+          size += c.length;
+          if (size > 65536) throw Object.assign(new Error('请求内容过大。'), {status: 413});
+          chunks.push(c);
+        }
+        try { body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); }
+        catch { throw Object.assign(new Error('请求格式错误。'), {status: 400}); }
+      }
+      if (await handleLibrary({path: p, method: req.method, req, res, respond, user, body})) return;
     }
     throw Object.assign(new Error('页面不存在。'), {status: 404});
   } catch (e) {

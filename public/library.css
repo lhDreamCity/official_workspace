@@ -36,13 +36,13 @@
 .lib-progress-bar{height:100%;background:#2f5d8a;transition:width .2s;width:0}
 .lib-progress span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#102a43;font-weight:600}
 
-.lib-head{display:grid;grid-template-columns:28px 1fr 84px 96px 78px 68px;gap:8px;padding:0 16px 8px;margin-top:14px;font-size:11px;color:#9fb3c8;font-weight:700;letter-spacing:.02em}
+.lib-head{display:grid;grid-template-columns:28px 1fr 84px 96px 78px 68px 24px;gap:8px;padding:0 16px 8px;margin-top:14px;font-size:11px;color:#9fb3c8;font-weight:700;letter-spacing:.02em}
 .lib-head .lib-author,.lib-head .lib-date,.lib-head .lib-size{text-align:right}
-.lib-head>span:last-child{text-align:center}
+.lib-head>span:nth-last-child(2){text-align:center}
 .lib-list{background:#fff;border:1px solid #e4ebf3;border-radius:12px;overflow:hidden}
 .lib-section-label{padding:9px 16px;font-size:12px;font-weight:700;color:#829ab1;background:#f7fafc;border-bottom:1px solid #e4ebf3;display:flex;align-items:center;gap:8px}
 .lib-section-label b{margin-left:auto;font-size:11px;color:#627d98;background:#eef2f6;border-radius:6px;padding:1px 7px}
-.lib-row{display:grid;grid-template-columns:28px 1fr 84px 96px 78px 68px;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid #eef2f6;cursor:pointer;font-size:14px}
+.lib-row{display:grid;grid-template-columns:28px 1fr 84px 96px 78px 68px 24px;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid #eef2f6;cursor:pointer;font-size:14px}
 .lib-row:last-child{border-bottom:none}
 .lib-row:hover{background:#f7fafc}
 .lib-row.is-new{background:#eef8f1;box-shadow:inset 3px 0 0 #2f9e5f}
@@ -59,11 +59,41 @@
 .lib-empty-inline{padding:16px}
 .lib-hint{font-size:12px;color:#b6c6d6}
 
+/* 署名标签：谁上传的（登记表登记，一经署名不可修改） */
+.lib-sign{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#627d98;background:#f7fafc;border:1px solid #e4ebf3;border-radius:9px;padding:4px 8px 4px 10px;white-space:nowrap}
+.lib-sign select{border:none;background:transparent;font:inherit;font-size:13px;color:#243b53;font-weight:600;cursor:pointer;outline:none;max-width:110px}
+.lib-tag{display:inline-block;font-size:11px;font-weight:600;color:#2f5d8a;background:#e8f0f8;border:1px solid #d6e6f7;border-radius:6px;padding:1px 7px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lib-tag-cos{color:#7c5e10;background:#faf0d7;border-color:#f0e0b4}
+.lib-notag{font-size:11px;color:#b6c6d6}
+
+/* 行内操作入口（⋯）：重命名 / 移动到 / 贴署名 */
+.lib-more{border:none;background:transparent;font:inherit;font-size:15px;line-height:1;color:#9fb3c8;cursor:pointer;border-radius:6px;padding:3px 4px;text-align:center}
+.lib-more:hover{background:#eef2f6;color:#2f5d8a}
+.lib-more-off{visibility:hidden;color:#dbe3ec}
+
+/* 操作菜单（浮层，跟随 ⋯ 定位） */
+.lib-menu{position:fixed;z-index:80;min-width:186px;background:#fff;border:1px solid #e4ebf3;border-radius:10px;box-shadow:0 12px 30px rgba(16,42,67,.16);padding:5px;display:flex;flex-direction:column}
+.lib-menu button{border:none;background:transparent;font:inherit;font-size:13px;color:#334e68;text-align:left;padding:8px 10px;border-radius:7px;cursor:pointer;white-space:nowrap}
+.lib-menu button:hover{background:#eef5fc;color:#102a43}
+.lib-menu-sep{height:1px;background:#eef2f6;margin:5px 6px}
+.lib-menu-note{font-size:11px;font-weight:700;color:#9fb3c8;padding:6px 10px 3px;letter-spacing:.02em}
+
+/* 输入弹窗（新建文件夹 / 重命名 / 移动） */
+.lib-prompt{position:fixed;inset:0;background:rgba(16,42,67,.45);display:flex;align-items:center;justify-content:center;z-index:90;padding:20px}
+.lib-prompt-card{max-width:420px;width:100%;padding:0;overflow:hidden}
+.lib-prompt-body{padding:16px 18px 4px;display:flex;flex-direction:column;gap:8px}
+.lib-prompt-body label{font-size:12px;font-weight:700;color:#627d98}
+.lib-prompt-body input{border:1px solid #d6e0ea;border-radius:9px;padding:10px 12px;font:inherit;font-size:14px;color:#243b53;outline:none}
+.lib-prompt-body input:focus{border-color:#2f5d8a;box-shadow:0 0 0 3px rgba(47,93,138,.12)}
+.lib-prompt-body .lib-hint{margin:0;min-height:16px;line-height:1.5;word-break:break-word}
+.lib-prompt-actions{display:flex;justify-content:flex-end;gap:10px;padding:6px 18px 16px}
+
 /* 图标视图 */
 .lib-list-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:12px;background:transparent;border:none;border-radius:0}
 .lib-list-grid .lib-section-label{grid-column:1/-1;border-radius:10px;border:1px solid #e4ebf3}
 .lib-list-grid .lib-empty{grid-column:1/-1;background:#fff;border:1px solid #e4ebf3;border-radius:12px}
-.lib-list-grid .lib-row{display:flex;flex-direction:column;align-items:center;gap:6px;border:1px solid #e4ebf3;border-radius:12px;padding:18px 12px 14px;background:#fff;text-align:center}
+.lib-list-grid .lib-row{display:flex;flex-direction:column;align-items:center;gap:6px;border:1px solid #e4ebf3;border-radius:12px;padding:18px 12px 14px;background:#fff;text-align:center;position:relative}
+.lib-list-grid .lib-more{position:absolute;top:7px;right:7px}
 .lib-list-grid .lib-row:hover{border-color:#b8c9d9;background:#fbfdff}
 .lib-list-grid .lib-ico{font-size:30px}
 .lib-list-grid .lib-name{display:block;max-width:100%;font-size:13px;font-weight:600}
@@ -123,7 +153,8 @@
  .lib-layout{grid-template-columns:1fr}
  .lib-tree{max-height:220px}
  .lib-head{display:none}
- .lib-row{grid-template-columns:24px 1fr 64px;gap:6px}
+ .lib-row{grid-template-columns:24px 1fr 64px 22px;gap:6px}
  .lib-author,.lib-date,.lib-size{display:none}
  .lib-list-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
+ .lib-head-actions{flex-wrap:wrap;gap:8px}
 }

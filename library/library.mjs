@@ -35,10 +35,34 @@ async function loadRoster() {
     for (const line of text.split('\n')) {
       const cells = line.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
       if (cells.length < 6 || cells[0] === 'id' || cells[0].startsWith('-') || cells[0].includes('<')) continue;
-      members.push({id: cells[0], name: cells[1], email: cells[2], role: cells[4]});
+      members.push({id: cells[0], name: cells[1], email: cells[2], role: cells[4], label: cells[6] || cells[1]});
     }
     return members;
   } catch { return []; }
+}
+
+// ---------- 署名登记（谁上传的）----------
+const AUTHORS_FILE = path.join(WS, '_meta', 'authors.md');
+const AUTHORS_HEAD = '# 署名登记\n\n> 记录每份文件的署名（谁上传的），由「库」页自动维护。**已署名的文件不可修改署名。**\n\n| 路径 | 标签 | 日期 | 登记人 |\n|---|---|---|---|\n';
+async function loadAuthors() {
+  const map = {};
+  try {
+    for (const line of (await fsp.readFile(AUTHORS_FILE, 'utf8')).split('\n')) {
+      const cells = line.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+      if (cells.length < 4 || cells[0] === '路径' || cells[0].startsWith('-')) continue;
+      const p = cells[0].replace(/`/g, '');
+      if (p) map[p] = {tag: cells[1], date: cells[2], by: cells[3]};
+    }
+  } catch { /* 尚未建立 */ }
+  return map;
+}
+async function writeAuthors(map) {
+  const rows = Object.entries(map).sort(([a], [b]) => a.localeCompare(b, 'zh'));
+  const body = rows.map(([p, v]) => `| ${p} | ${v.tag} | ${v.date} | ${v.by} |`).join('\n');
+  await fsp.writeFile(AUTHORS_FILE, AUTHORS_HEAD + (body ? body + '\n' : ''), 'utf8');
+}
+async function availableTags() { // 署名下拉选项（花名册顺序）
+  return (await loadRoster()).filter(m => m.id).map(m => ({id: m.id, label: m.label}));
 }
 async function resolveAuthor(userName) {
   const hit = (await loadRoster()).find(m => m.name === userName);
@@ -87,20 +111,21 @@ async function syncBeforeWrite() {
     await gitPull();
   });
 }
-async function gitCommitPush(message, author, paths) {
-  return enqueue(async () => {
-    await git('add', '-A', '--', ...paths);
-    let changed = true;
-    try { await git('diff', '--cached', '--quiet'); changed = false; } catch { /* 有暂存变化 */ }
-    if (changed) await git('commit', '--author', `${author.name} <${author.email}>`, '-m', message);
-    const ahead = Number((await git('rev-list', '--count', 'origin/main..HEAD')).trim());
-    if (ahead > 0) { // 本地领先远端就推（含本次提交与历史残留提交）
-      try { await git('push', 'origin', 'main'); }
-      catch { await gitPull(); await git('push', 'origin', 'main'); }
-    }
-    return changed;
-  });
+async function commitPush(message, author, paths) { // 不含队列包装，供已在队列内的复合操作复用
+  // 整树暂存：git mv 之后原路径不再存在，用 pathspec 会让 git 直接 fatal。
+  // 本服务是 workspace 仓的唯一写入方，写前必过 syncBeforeWrite/gitRecover，工作树本就是干净的。
+  await git('add', '-A');
+  let changed = true;
+  try { await git('diff', '--cached', '--quiet'); changed = false; } catch { /* 有暂存变化 */ }
+  if (changed) await git('commit', '--author', `${author.name} <${author.email}>`, '-m', message);
+  const ahead = Number((await git('rev-list', '--count', 'origin/main..HEAD')).trim());
+  if (ahead > 0) { // 本地领先远端就推（含本次提交与历史残留提交）
+    try { await git('push', 'origin', 'main'); }
+    catch { await gitPull(); await git('push', 'origin', 'main'); }
+  }
+  return changed;
 }
+function gitCommitPush(message, author, paths) { return enqueue(() => commitPush(message, author, paths)); }
 
 // ---------- manifest（append-only 文本，宽松解析） ----------
 const MANIFEST = path.join(WS, 'media', 'manifest.yaml');
@@ -120,6 +145,7 @@ async function readManifest() {
 }
 
 // ---------- 路径安全 ----------
+const exists = async p => { try { await fsp.access(p); return true; } catch { return false; } };
 function safeJoin(rel) {
   const target = path.resolve(WS, rel);
   if (target !== WS && !target.startsWith(WS + path.sep)) throw fail(400, '路径无效。');
@@ -159,7 +185,7 @@ export function parseMultipart(buf, boundary) {
 
 // ---------- 目录树 ----------
 async function walk(dir, rel, depth, out, budget) {
-  if (depth > 6 || budget.n <= 0) return;
+  if (depth > 12 || budget.n <= 0) return;
   let items;
   try { items = await fsp.readdir(dir, {withFileTypes: true}); } catch { return; }
   for (const it of items) {
@@ -177,9 +203,9 @@ async function walk(dir, rel, depth, out, budget) {
     }
   }
 }
-async function tree() {
+async function tree(user) {
   const out = [];
-  const budget = {n: 5000};
+  const budget = {n: 20000};
   for (const root of ROOTS) {
     out.push({path: root, name: root, type: 'dir', root: true}); // 分区本身也作为条目，前端才能画出目录树
     await walk(path.join(WS, root), root, 1, out, budget);
@@ -189,10 +215,15 @@ async function tree() {
   const meta = {};
   for (const e of manifest) if (e.path) meta[e.path] = {author: e.author || '', date: e.date || ''};
   const files = out.filter(e => e.type === 'file');
+  const meHit = user?.name ? (await loadRoster()).find(m => m.name === user.name) : null;
+  const me = user ? {name: user.name, label: meHit?.label || ''} : null;
   const roster = {};
-  for (const m of await loadRoster()) roster[m.id] = m.name; // 让前端把 author id 显示成中文名
+  for (const m of await loadRoster()) roster[m.id] = m.label; // 让前端把署名 id 显示成标签名
   return {
     entries: out, cos, meta, roots: ROOTS, roster,
+    labels: await loadAuthors(),   // 路径 → {tag,date,by}：署名标签的唯一来源
+    tags: await availableTags(),   // 署名下拉选项
+    me,
     stats: {
       files: files.length,
       dirs: out.length - files.length,
@@ -217,13 +248,81 @@ async function preview(rel) {
 }
 
 // ---------- 上传 ----------
-async function ensureFrontmatter(target, author) {
+async function ensureFrontmatter(target, tag) {
   const ext = path.extname(target).toLowerCase();
   if (!DOC_EXT.has(ext)) return;
   const text = await fsp.readFile(target, 'utf8').catch(() => '');
   if (text.startsWith('---')) return;
   const stem = path.basename(target, ext);
-  await fsp.writeFile(target, `---\ntitle: ${stem}\nauthor: ${author.id}\ndate: ${day()}\n---\n\n${text}`, 'utf8');
+  const author = tag ? `author: ${tag}\n` : ''; // 允许不署名
+  await fsp.writeFile(target, `---\ntitle: ${stem}\n${author}date: ${day()}\n---\n\n${text}`, 'utf8');
+}
+
+// ---------- 文件系统操作（建目录 / 移动重命名 / 贴署名；按要求不提供删除） ----------
+const KEEP = '.gitkeep'; // git 不跟踪空目录，用隐藏占位文件（以 . 开头，库里不显示）
+function checkNewName(rel) { // 新建/改名的最后一段：不接隐藏名与保留前缀
+  const name = String(rel).split('/').pop();
+  if (!name || /^[._]/.test(name)) throw fail(400, '名称不能以「.」或「_」开头。');
+  if (!/[^\s]/.test(name)) throw fail(400, '名称不能为空。');
+  return name;
+}
+async function mkdirOp(rel, user) {
+  checkRel(rel);
+  checkNewName(rel);
+  const dir = safeJoin(rel);
+  if (await exists(dir)) throw fail(400, '同名文件夹已存在。');
+  await syncBeforeWrite();
+  await fsp.mkdir(dir, {recursive: true});
+  await fsp.writeFile(path.join(dir, KEEP), '');
+  const author = await resolveAuthor(user.name);
+  const ok = await gitCommitPush(`mkdir: 新建文件夹 ${rel}`, author, [`${rel}/${KEEP}`]);
+  return {committed: ok, path: rel};
+}
+async function moveOp(from, to, user) {
+  checkRel(from); checkRel(to);
+  if (from === to) throw fail(400, '源路径与目标路径相同。');
+  if (to.startsWith(from + '/')) throw fail(400, '不能移动到自身的子目录里。');
+  if (!from.includes('/') && to.includes('/')) throw fail(400, '分区目录不能改名，请在各分区内部移动。');
+  checkNewName(to);
+  const src = safeJoin(from), dst = safeJoin(to);
+  if (!(await exists(src))) throw fail(400, '源文件不存在。');
+  if (await exists(dst)) throw fail(400, '目标位置已有同名项。');
+  const author = await resolveAuthor(user.name);
+  await fsp.mkdir(path.dirname(dst), {recursive: true});
+  return await enqueue(async () => {
+    await gitRecover();
+    await gitPull(); // 先同步远端，再基于最新登记表改署名，避免覆盖别人的登记
+    const authors = await loadAuthors();
+    const paths = [from, to];
+    if (authors[from]) { authors[to] = authors[from]; delete authors[from]; paths.push('_meta/authors.md'); }
+    // 目录整体移动时，子文件的署名也要跟着走
+    for (const p of Object.keys(authors)) {
+      if (p.startsWith(from + '/')) { authors[`${to}/${p.slice(from.length + 1)}`] = authors[p]; delete authors[p]; }
+    }
+    await git('mv', from, to);
+    if (paths.includes('_meta/authors.md')) await writeAuthors(authors);
+    const ok = await commitPush(`move: ${from} → ${to}`, author, paths);
+    return {committed: ok, from, to};
+  });
+}
+async function tagOp(rel, value, user) {
+  checkRel(rel);
+  if (!(await exists(safeJoin(rel)))) throw fail(400, '文件不存在。');
+  if (!value) return {tagged: false, tag: '', message: '未署名'}; // 允许不署名
+  const tags = await availableTags();
+  const hit = tags.find(t => t.label === value || t.id === value);
+  if (!hit) throw fail(400, '未知的署名标签。');
+  const author = await resolveAuthor(user.name);
+  return await enqueue(async () => {
+    await gitRecover();
+    await gitPull();
+    const authors = await loadAuthors();
+    if (authors[rel]) throw fail(400, `这份文件已署名为「${authors[rel].tag}」，署名不可修改。`);
+    authors[rel] = {tag: hit.label, date: day(), by: user.name};
+    await writeAuthors(authors);
+    const ok = await commitPush(`tag: ${rel} 署名 ${hit.label}`, author, ['_meta/authors.md']);
+    return {tagged: true, tag: hit.label, committed: ok};
+  });
 }
 
 async function upload(req, user) {
@@ -247,6 +346,9 @@ async function upload(req, user) {
   if (files.length > 20) throw fail(400, '一次最多上传 20 个文件。');
 
   const author = await resolveAuthor(user.name);
+  const rosterHit = (await loadRoster()).find(m => m.name === user.name);
+  // 署名标签：请求显式给出就用它（空串 = 不署名），否则默认用登录人对应的标签
+  const tag = fields.tag !== undefined ? fields.tag.trim() : (rosterHit?.label || author.name);
   await syncBeforeWrite();          // 先把远端同步与残留清理做完，再落本地文件
   const cfg = loadCosConfig();
   let targetRel = (fields.path || 'knowledge').replace(/^\/+|\/+$/g, '');
@@ -254,7 +356,7 @@ async function upload(req, user) {
   const targetDir = safeJoin(targetRel);
   await fsp.mkdir(targetDir, {recursive: true});
 
-  const results = [], touched = new Set(), manifestLines = [];
+  const results = [], touched = new Set(), manifestLines = [], authorsNew = {};
   for (const f of files) {
     const name = sanitize(f.filename);
     const ext = path.extname(name).toLowerCase();
@@ -264,7 +366,7 @@ async function upload(req, user) {
       const subdir = VIDEO_EXT.has(ext) ? 'videos' : 'assets';
       const key = cosKeyFor(cfg, name, subdir);
       const r = await putBuffer(cfg, key, f.data);
-      manifestLines.push(`- name: ${name}\n  author: ${author.id}\n  date: ${day()}\n  size_mb: ${(f.data.length / 1048576).toFixed(1)}\n  status: stored\n  cos: ${r.url}\n`);
+      manifestLines.push(`- name: ${name}\n  author: ${tag || ''}\n  date: ${day()}\n  size_mb: ${(f.data.length / 1048576).toFixed(1)}\n  status: stored\n  cos: ${r.url}\n`);
       results.push({name, route: 'cos', url: r.url});
     } else {
       // git 路由（重名加日期后缀，再重加序号）
@@ -275,10 +377,11 @@ async function upload(req, user) {
         catch { break; }
       }
       await fsp.writeFile(dest, f.data);
-      await ensureFrontmatter(dest, author);
+      await ensureFrontmatter(dest, tag);
       const rel = path.relative(WS, dest).split(path.sep).join('/');
       touched.add(rel);
-      if (MEDIA_EXT.has(ext)) manifestLines.push(`- path: ${rel}\n  author: ${author.id}\n  date: ${day()}\n`);
+      if (tag) { authorsNew[rel] = {tag, date: day(), by: user.name}; }
+      if (MEDIA_EXT.has(ext)) manifestLines.push(`- path: ${rel}\n  author: ${tag || ''}\n  date: ${day()}\n`);
       results.push({name: path.basename(dest), route: 'git', path: rel});
     }
   }
@@ -287,19 +390,25 @@ async function upload(req, user) {
     await fsp.appendFile(MANIFEST, manifestLines.join(''));
     touched.add('media/manifest.yaml');
   }
+  if (Object.keys(authorsNew).length) { // 署名登记（已署名文件不受影响，只新增）
+    const authors = await loadAuthors();
+    Object.assign(authors, authorsNew);
+    await writeAuthors(authors);
+    touched.add('_meta/authors.md');
+  }
 
   let committed = false;
   if (touched.size) {
     const names = results.filter(r => r.route === 'git').map(r => r.name).slice(0, 5).join('、') || '大文件登记';
-    const msg = `upload: ${author.id} 上传 ${names}${results.length > 5 ? ' 等' : ''}`;
+    const msg = `upload: ${tag || '未署名'} 上传 ${names}${results.length > 5 ? ' 等' : ''}`;
     committed = await gitCommitPush(msg, author, [...touched]);
   }
-  return {results, committed, author: author.name};
+  return {results, committed, author: author.name, tag: tag || ''};
 }
 
 // ---------- 入口 ----------
-export async function handleLibrary({path: p, method, req, res, respond, user, raw}) {
-  if (p === '/api/library/tree' && method === 'GET') { refreshSoon(); respond(res, 200, await tree()); return true; }
+export async function handleLibrary({path: p, method, req, res, respond, user, body}) {
+  if (p === '/api/library/tree' && method === 'GET') { refreshSoon(); respond(res, 200, await tree(user)); return true; }
   if (p === '/api/library/file' && method === 'GET') {
     const rel = new URL(req.url, 'http://x').searchParams.get('path') || '';
     const {buf, type, ext} = await preview(rel);
@@ -309,6 +418,18 @@ export async function handleLibrary({path: p, method, req, res, respond, user, r
   }
   if (p === '/api/upload' && method === 'POST') {
     respond(res, 200, await upload(req, user));
+    return true;
+  }
+  if (p === '/api/library/mkdir' && method === 'POST') {
+    respond(res, 200, await mkdirOp(String(body.path || ''), user));
+    return true;
+  }
+  if (p === '/api/library/move' && method === 'POST') {
+    respond(res, 200, await moveOp(String(body.from || ''), String(body.to || ''), user));
+    return true;
+  }
+  if (p === '/api/library/tag' && method === 'POST') {
+    respond(res, 200, await tagOp(String(body.path || ''), String(body.tag || ''), user));
     return true;
   }
   return false;
