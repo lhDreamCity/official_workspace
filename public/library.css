@@ -1,43 +1,87 @@
-/* 「库」页面样式：Finder 式左树右表 */
-.lib-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 16px}
+/* 「库」页面样式：Finder 式左树右表（列表 / 图标两种视图） */
+.lib-head-actions{display:flex;gap:10px;align-items:center}
+.lib-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 12px;flex-wrap:wrap}
 .lib-crumb{font-size:14px;color:#627d98;font-weight:600}
-.lib-search{flex:0 1 280px}
-.lib-layout{display:grid;grid-template-columns:220px 1fr;gap:20px;align-items:start}
-.lib-tree{background:#fff;border:1px solid #e4ebf3;border-radius:12px;padding:10px 6px;max-height:70vh;overflow:auto}
-.lib-tree-root,.lib-tree-item{padding:8px 10px;border-radius:8px;cursor:pointer;font-size:14px;color:#334e68;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lib-toolbar-right{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
+.lib-search{flex:0 1 240px;min-width:170px}
+.lib-toggle{display:inline-flex;background:#eef2f6;border-radius:9px;padding:2px;white-space:nowrap}
+.lib-toggle button{border:none;background:transparent;font:inherit;font-size:12px;color:#627d98;padding:5px 10px;border-radius:7px;cursor:pointer;white-space:nowrap}
+.lib-head-actions button{white-space:nowrap}
+.lib-toggle button.active{background:#fff;color:#102a43;font-weight:600;box-shadow:0 1px 3px rgba(16,42,67,.08)}
+
+.lib-stats{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0 0 14px;font-size:12px;color:#829ab1}
+.lib-stats i{font-style:normal;color:#cbd6e2}
+.lib-stat{background:#f7fafc;border:1px solid #e4ebf3;border-radius:8px;padding:3px 9px}
+.lib-stat.strong{color:#2f5d8a;font-weight:600;background:#eef5fc;border-color:#d6e6f7}
+
+.lib-layout{display:grid;grid-template-columns:240px 1fr;gap:20px;align-items:start}
+.lib-tree{background:#fff;border:1px solid #e4ebf3;border-radius:12px;padding:8px 6px;max-height:70vh;overflow:auto}
+.lib-tree-root,.lib-tree-item,.lib-tree-sys{display:flex;align-items:center;gap:6px;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:14px;color:#334e68;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lib-tree-sys{color:#486581}
 .lib-tree-root{font-weight:700}
-.lib-tree-root:hover,.lib-tree-item:hover{background:#f0f5fa}
-.lib-tree-root.active,.lib-tree-item.active{background:#e8f0f8;color:#102a43}
+.lib-tree-root:hover,.lib-tree-item:hover,.lib-tree-sys:hover{background:#f0f5fa}
+.lib-tree-root.active,.lib-tree-item.active,.lib-tree-sys.active{background:#e8f0f8;color:#102a43}
 .lib-tree-cos{display:flex;align-items:center;gap:6px}
+.lib-tree-sep{height:1px;background:#e9eef4;margin:6px 10px}
+.lib-count{margin-left:auto;font-size:11px;color:#829ab1;background:#f0f5fa;border-radius:6px;padding:1px 7px;font-weight:600}
+.lib-tree-item.active .lib-count{background:#d9e7f5;color:#2f5d8a}
 .lib-badge{font-size:11px;background:#d9e7f5;color:#2f5d8a;border-radius:6px;padding:1px 6px}
+
 .lib-main{min-width:0}
-.lib-drop{border:2px dashed #b8c9d9;border-radius:12px;padding:26px 20px;text-align:center;color:#627d98;background:#fbfdff;transition:.15s;display:flex;flex-direction:column;gap:4px}
+.lib-drop{border:2px dashed #b8c9d9;border-radius:12px;padding:20px;text-align:center;color:#627d98;background:#fbfdff;transition:.15s;display:flex;flex-direction:column;gap:4px}
 .lib-drop strong{color:#334e68;font-size:15px}
 .lib-drop span{font-size:13px}
 .lib-drop.over{border-color:#2f5d8a;background:#eef5fc}
 .lib-progress{margin:12px 0;background:#e4ebf3;border-radius:8px;height:26px;position:relative;overflow:hidden}
 .lib-progress-bar{height:100%;background:#2f5d8a;transition:width .2s;width:0}
 .lib-progress span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#102a43;font-weight:600}
-.lib-list{margin-top:14px;background:#fff;border:1px solid #e4ebf3;border-radius:12px;overflow:hidden}
-.lib-section-label{padding:10px 16px;font-size:12px;font-weight:700;color:#829ab1;background:#f7fafc;border-bottom:1px solid #e4ebf3}
-.lib-row{display:grid;grid-template-columns:28px 1fr 72px 96px 76px 64px;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid #eef2f6;cursor:pointer;font-size:14px}
+
+.lib-head{display:grid;grid-template-columns:28px 1fr 84px 96px 78px 68px;gap:8px;padding:0 16px 8px;margin-top:14px;font-size:11px;color:#9fb3c8;font-weight:700;letter-spacing:.02em}
+.lib-head .lib-author,.lib-head .lib-date,.lib-head .lib-size{text-align:right}
+.lib-head>span:last-child{text-align:center}
+.lib-list{background:#fff;border:1px solid #e4ebf3;border-radius:12px;overflow:hidden}
+.lib-section-label{padding:9px 16px;font-size:12px;font-weight:700;color:#829ab1;background:#f7fafc;border-bottom:1px solid #e4ebf3;display:flex;align-items:center;gap:8px}
+.lib-section-label b{margin-left:auto;font-size:11px;color:#627d98;background:#eef2f6;border-radius:6px;padding:1px 7px}
+.lib-row{display:grid;grid-template-columns:28px 1fr 84px 96px 78px 68px;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid #eef2f6;cursor:pointer;font-size:14px}
 .lib-row:last-child{border-bottom:none}
 .lib-row:hover{background:#f7fafc}
+.lib-row.is-new{background:#eef8f1;box-shadow:inset 3px 0 0 #2f9e5f}
 .lib-row-dir{font-weight:600;color:#2f5d8a}
-.lib-ico{color:#627d98;text-align:center}
-.lib-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#243b53}
-.lib-author,.lib-date,.lib-size{font-size:12px;color:#829ab1;text-align:right}
+.lib-ico{color:#627d98;text-align:center;font-size:16px}
+.lib-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#243b53;display:flex;align-items:baseline;gap:8px}
+.lib-name small{color:#9fb3c8;font-size:11px;flex:0 0 auto}
+.lib-new-tag{font-size:10px;color:#fff;background:#2f9e5f;border-radius:5px;padding:0 5px;font-weight:600}
+.lib-pending{font-size:10px;color:#8a5a00;background:#fdf1d6;border-radius:5px;padding:0 5px;font-weight:600;margin-left:6px}
+.lib-author,.lib-date,.lib-size{font-size:12px;color:#829ab1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lib-src{font-size:11px;color:#627d98;background:#eef2f6;border-radius:6px;padding:2px 6px;text-align:center}
 .lib-src-cos{color:#7c5e10;background:#faf0d7}
-.lib-empty{padding:28px 16px;text-align:center;color:#9fb3c8;font-size:14px}
+.lib-empty{padding:28px 16px;text-align:center;color:#9fb3c8;font-size:14px;line-height:1.9}
+.lib-empty-inline{padding:16px}
+.lib-hint{font-size:12px;color:#b6c6d6}
+
+/* 图标视图 */
+.lib-list-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:12px;background:transparent;border:none;border-radius:0}
+.lib-list-grid .lib-section-label{grid-column:1/-1;border-radius:10px;border:1px solid #e4ebf3}
+.lib-list-grid .lib-empty{grid-column:1/-1;background:#fff;border:1px solid #e4ebf3;border-radius:12px}
+.lib-list-grid .lib-row{display:flex;flex-direction:column;align-items:center;gap:6px;border:1px solid #e4ebf3;border-radius:12px;padding:18px 12px 14px;background:#fff;text-align:center}
+.lib-list-grid .lib-row:hover{border-color:#b8c9d9;background:#fbfdff}
+.lib-list-grid .lib-ico{font-size:30px}
+.lib-list-grid .lib-name{display:block;max-width:100%;font-size:13px;font-weight:600}
+.lib-list-grid .lib-name small{display:block;margin-top:2px}
+.lib-list-grid .lib-author,.lib-list-grid .lib-date,.lib-list-grid .lib-size{display:none}
+.lib-list-grid .lib-src{margin-top:2px}
+
 .lib-preview{position:fixed;inset:0;background:rgba(16,42,67,.45);display:flex;align-items:center;justify-content:center;z-index:60;padding:20px}
-.lib-preview-card{background:#fff;border-radius:14px;max-width:860px;width:100%;max-height:84vh;display:flex;flex-direction:column;overflow:hidden}
-.lib-preview-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid #e4ebf3}
+.lib-preview-card{background:#fff;border-radius:14px;max-width:880px;width:100%;max-height:84vh;display:flex;flex-direction:column;overflow:hidden}
+.lib-preview-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid #e4ebf3}
+.lib-preview-meta{font-size:12px;color:#829ab1;margin-top:4px}
 .lib-preview-body{padding:18px;overflow:auto}
 .lib-pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-word;color:#243b53;margin:0}
 @media (max-width:860px){
  .lib-layout{grid-template-columns:1fr}
- .lib-tree{max-height:200px}
+ .lib-tree{max-height:220px}
+ .lib-head{display:none}
  .lib-row{grid-template-columns:24px 1fr 64px;gap:6px}
  .lib-author,.lib-date,.lib-size{display:none}
+ .lib-list-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
 }

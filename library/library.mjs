@@ -180,12 +180,27 @@ async function walk(dir, rel, depth, out, budget) {
 async function tree() {
   const out = [];
   const budget = {n: 5000};
-  for (const root of ROOTS) await walk(path.join(WS, root), root, 1, out, budget);
+  for (const root of ROOTS) {
+    out.push({path: root, name: root, type: 'dir', root: true}); // 分区本身也作为条目，前端才能画出目录树
+    await walk(path.join(WS, root), root, 1, out, budget);
+  }
   const manifest = await readManifest();
   const cos = manifest.filter(e => e.name && e.cos);
   const meta = {};
   for (const e of manifest) if (e.path) meta[e.path] = {author: e.author || '', date: e.date || ''};
-  return {entries: out, cos, meta, roots: ROOTS};
+  const files = out.filter(e => e.type === 'file');
+  const roster = {};
+  for (const m of await loadRoster()) roster[m.id] = m.name; // 让前端把 author id 显示成中文名
+  return {
+    entries: out, cos, meta, roots: ROOTS, roster,
+    stats: {
+      files: files.length,
+      dirs: out.length - files.length,
+      bytes: files.reduce((s, f) => s + (f.size || 0), 0),
+      cloud: cos.length,
+      updated: files.map(f => f.mtime).sort().pop() || '',
+    },
+  };
 }
 
 // ---------- 文件预览 ----------
