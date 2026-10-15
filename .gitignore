@@ -20,3 +20,4 @@ _server.sha256
 .DS_Store
 Thumbs.db
 desktop.ini
+library.env

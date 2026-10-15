@@ -8,7 +8,7 @@
  try{
   auth=await api('/api/auth-config');if(!['wecom','feishu'].includes(auth.provider))throw Error('登录配置异常，请联系管理员。');
   const identity=await api('/api/me');window.Workroom={...identity,api,records:(await api('/api/records')).records};
-  for(const name of ['deletion.js','app.js','portal.js','team.js','mobile-ui.js?v=0c8d352ffeb1','hub.js?v=f73814ff3933','journal-ui.js?v=768059897bf3'])await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src=name;script.onload=resolve;script.onerror=()=>reject(Error('页面资源未加载，请刷新后重试。'));document.body.append(script);});
+  for(const name of ['deletion.js','app.js','portal.js','team.js','mobile-ui.js?v=0c8d352ffeb1','hub.js?v=f73814ff3933','journal-ui.js?v=768059897bf3','library-ui.js?v=4187e3928308'])await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src=name;script.onload=resolve;script.onerror=()=>reject(Error('页面资源未加载，请刷新后重试。'));document.body.append(script);});
   document.querySelector('.identity').innerHTML=`<span class="avatar">${safe(identity.user.name.slice(0,1))}</span><div>${safe(identity.user.name)}<small>${safe(auth.label)}身份 · 服务器保存</small></div>`;
   document.querySelector('.local-badge').innerHTML=`<i></i> ${safe(auth.label)}已连接 · 个人工作记录`;document.querySelector('.workspace-label span').textContent='公司记录';
   let refreshing=false;

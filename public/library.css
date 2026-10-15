@@ -1,0 +1,43 @@
+/* 「库」页面样式：Finder 式左树右表 */
+.lib-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 16px}
+.lib-crumb{font-size:14px;color:#627d98;font-weight:600}
+.lib-search{flex:0 1 280px}
+.lib-layout{display:grid;grid-template-columns:220px 1fr;gap:20px;align-items:start}
+.lib-tree{background:#fff;border:1px solid #e4ebf3;border-radius:12px;padding:10px 6px;max-height:70vh;overflow:auto}
+.lib-tree-root,.lib-tree-item{padding:8px 10px;border-radius:8px;cursor:pointer;font-size:14px;color:#334e68;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lib-tree-root{font-weight:700}
+.lib-tree-root:hover,.lib-tree-item:hover{background:#f0f5fa}
+.lib-tree-root.active,.lib-tree-item.active{background:#e8f0f8;color:#102a43}
+.lib-tree-cos{display:flex;align-items:center;gap:6px}
+.lib-badge{font-size:11px;background:#d9e7f5;color:#2f5d8a;border-radius:6px;padding:1px 6px}
+.lib-main{min-width:0}
+.lib-drop{border:2px dashed #b8c9d9;border-radius:12px;padding:26px 20px;text-align:center;color:#627d98;background:#fbfdff;transition:.15s;display:flex;flex-direction:column;gap:4px}
+.lib-drop strong{color:#334e68;font-size:15px}
+.lib-drop span{font-size:13px}
+.lib-drop.over{border-color:#2f5d8a;background:#eef5fc}
+.lib-progress{margin:12px 0;background:#e4ebf3;border-radius:8px;height:26px;position:relative;overflow:hidden}
+.lib-progress-bar{height:100%;background:#2f5d8a;transition:width .2s;width:0}
+.lib-progress span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#102a43;font-weight:600}
+.lib-list{margin-top:14px;background:#fff;border:1px solid #e4ebf3;border-radius:12px;overflow:hidden}
+.lib-section-label{padding:10px 16px;font-size:12px;font-weight:700;color:#829ab1;background:#f7fafc;border-bottom:1px solid #e4ebf3}
+.lib-row{display:grid;grid-template-columns:28px 1fr 72px 96px 76px 64px;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid #eef2f6;cursor:pointer;font-size:14px}
+.lib-row:last-child{border-bottom:none}
+.lib-row:hover{background:#f7fafc}
+.lib-row-dir{font-weight:600;color:#2f5d8a}
+.lib-ico{color:#627d98;text-align:center}
+.lib-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#243b53}
+.lib-author,.lib-date,.lib-size{font-size:12px;color:#829ab1;text-align:right}
+.lib-src{font-size:11px;color:#627d98;background:#eef2f6;border-radius:6px;padding:2px 6px;text-align:center}
+.lib-src-cos{color:#7c5e10;background:#faf0d7}
+.lib-empty{padding:28px 16px;text-align:center;color:#9fb3c8;font-size:14px}
+.lib-preview{position:fixed;inset:0;background:rgba(16,42,67,.45);display:flex;align-items:center;justify-content:center;z-index:60;padding:20px}
+.lib-preview-card{background:#fff;border-radius:14px;max-width:860px;width:100%;max-height:84vh;display:flex;flex-direction:column;overflow:hidden}
+.lib-preview-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid #e4ebf3}
+.lib-preview-body{padding:18px;overflow:auto}
+.lib-pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-word;color:#243b53;margin:0}
+@media (max-width:860px){
+ .lib-layout{grid-template-columns:1fr}
+ .lib-tree{max-height:200px}
+ .lib-row{grid-template-columns:24px 1fr 64px;gap:6px}
+ .lib-author,.lib-date,.lib-size{display:none}
+}

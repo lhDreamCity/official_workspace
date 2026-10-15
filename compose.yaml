@@ -36,6 +36,28 @@ services:
       timeout: 5s
       start_period: 10s
       retries: 3
+  library:
+    image: node:24-bookworm
+    restart: unless-stopped
+    working_dir: /app
+    command: ["node", "server.mjs"]
+    env_file:
+      - path: ./library.env
+        format: raw
+    volumes:
+      - ./library:/app:ro
+      - app_data:/data
+      - /home/ubuntu/dreamcity_workspace:/workspace
+      - /home/ubuntu/.ssh-dreamcity:/keys:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/library/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
 networks:
   proxy:
     external: true

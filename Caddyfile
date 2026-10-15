@@ -3,6 +3,12 @@ lhdreamcity.com, www.lhdreamcity.com {
 }
 
 work.lhdreamcity.com {
+    handle /api/library/* {
+        reverse_proxy library:3001
+    }
+    handle /api/upload* {
+        reverse_proxy library:3001
+    }
     handle /api/* {
         reverse_proxy workbench-deploy-app-1:3000
     }
