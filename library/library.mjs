@@ -72,24 +72,33 @@ async function gitPull() {
 export function refreshSoon() { // tree 请求触发后台同步（60s 节流）
   if (Date.now() - lastPull > 60000) enqueue(gitPull).catch(e => console.error('git pull failed:', e.message));
 }
-async function gitRecover() { // 上次任务中断留下脏树时，先兜底提交再 rebase（.gitignore 已拦 _inbox/_pending/密钥）
+async function gitRecover() { // 上次任务中断留下脏树时，先兜底提交并推送（.gitignore 已拦 _inbox/_pending/密钥）
   const dirty = (await git('status', '--porcelain')).trim();
-  if (dirty) {
-    console.error('workspace 有未提交残留，兜底提交后同步');
-    await git('add', '-A');
-    await git('commit', '-m', 'chore: 恢复中断的上传残留');
-  }
+  if (!dirty) return;
+  console.error('workspace 有未提交残留，兜底提交后同步');
+  await git('add', '-A');
+  await git('commit', '-m', 'chore: 恢复中断的上传残留');
+  await git('push', 'origin', 'main');
 }
-async function gitCommitPush(message, author, paths) {
+/** 写文件前调用：先处理残留、再同步远端（顺序很重要，否则本次上传会被卷进兜底提交） */
+async function syncBeforeWrite() {
   return enqueue(async () => {
     await gitRecover();
     await gitPull();
+  });
+}
+async function gitCommitPush(message, author, paths) {
+  return enqueue(async () => {
     await git('add', '-A', '--', ...paths);
-    try { await git('diff', '--cached', '--quiet'); return false; } catch { /* 有暂存变化 */ }
-    await git('commit', '--author', `${author.name} <${author.email}>`, '-m', message);
-    try { await git('push', 'origin', 'main'); }
-    catch { await gitPull(); await git('push', 'origin', 'main'); }
-    return true;
+    let changed = true;
+    try { await git('diff', '--cached', '--quiet'); changed = false; } catch { /* 有暂存变化 */ }
+    if (changed) await git('commit', '--author', `${author.name} <${author.email}>`, '-m', message);
+    const ahead = Number((await git('rev-list', '--count', 'origin/main..HEAD')).trim());
+    if (ahead > 0) { // 本地领先远端就推（含本次提交与历史残留提交）
+      try { await git('push', 'origin', 'main'); }
+      catch { await gitPull(); await git('push', 'origin', 'main'); }
+    }
+    return changed;
   });
 }
 
@@ -223,6 +232,7 @@ async function upload(req, user) {
   if (files.length > 20) throw fail(400, '一次最多上传 20 个文件。');
 
   const author = await resolveAuthor(user.name);
+  await syncBeforeWrite();          // 先把远端同步与残留清理做完，再落本地文件
   const cfg = loadCosConfig();
   let targetRel = (fields.path || 'knowledge').replace(/^\/+|\/+$/g, '');
   checkRel(targetRel);

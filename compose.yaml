@@ -39,6 +39,7 @@ services:
   library:
     image: node:24-bookworm
     restart: unless-stopped
+    user: "1000:1001"          # 与宿主 ubuntu 同 UID/GID：读写 workspace 仓、读密钥与 sessions 库
     working_dir: /app
     command: ["node", "server.mjs"]
     env_file:
@@ -48,7 +49,7 @@ services:
       - ./library:/app:ro
       - app_data:/data
       - /home/ubuntu/dreamcity_workspace:/workspace
-      - /home/ubuntu/.ssh-dreamcity:/keys:ro
+      - ./keys:/keys:ro
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]

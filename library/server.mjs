@@ -17,8 +17,8 @@ const getCookie = (req, name) => {
   catch { return ''; }
 };
 
-const db = new DatabaseSync(env.DB_PATH || '/data/workroom.sqlite');
-db.exec('PRAGMA busy_timeout=5000;');
+const db = new DatabaseSync(env.DB_PATH || '/data/workroom.sqlite', {readOnly: true}); // 只读取会话，主库写权限留在 app 服务
+try { db.exec('PRAGMA busy_timeout=5000;'); } catch { /* 只读连接下忽略 */ }
 
 function session(req) {
   return db.prepare('SELECT * FROM sessions WHERE token=? AND expires>? AND provider=? AND tenant=?')
