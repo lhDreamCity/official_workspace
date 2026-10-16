@@ -3,7 +3,7 @@
 (()=>{
  const api=window.Workroom?.api,csrf=window.Workroom?.csrf;
  if(!api)return; // 未登录不挂载
- pageNames.library='库';
+ pageNames.library='资料库';
  const $id=id=>document.getElementById(id);
  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const toast=m=>{const t=$id('toast');if(t){t.textContent=m;t.classList.add('show');clearTimeout(t._tm);t._tm=setTimeout(()=>t.classList.remove('show'),5000);}};
@@ -17,51 +17,50 @@
   return'file';};
  const ICON={dir:'▸',doc:'▤',image:'◫',video:'▶',office:'▦',archive:'⧉',file:'□',cos:'☁'};
  const ROOT_LABEL={projects:'projects · 项目',knowledge:'knowledge · 知识库',workflows:'workflows · 流程',media:'media · 素材'};
+ // 登记型栏目（资料/应用/组织/Skill）不再各自成页，改为「资料库」内的固定分组；
+ // 条目仍是数据库记录（/api/directory），渲染复用 portal.js 的 entryCard。
+ const ENTRY_GROUPS=[['material','公司资料','▤'],['app','应用','▦'],['contact','组织','♧'],['skill','Skill','✧']];
+ const ENTRY_LABEL=Object.fromEntries(ENTRY_GROUPS.map(([k,l])=>[k,l]));
+ const ENTRY_HINT={material:'文档、知识库与业务表格链接',app:'团队在用的系统与网页工具',contact:'部门与关键联系人入口',skill:'工作方法、提示词与 Skill 入口'};
 
- // ---- 挂载导航与页面（照 hub.js 的 Skill 库模式） ----
- const navItem=Object.assign(document.createElement('a'),{href:'#library',innerHTML:'<span>▤</span>库'});
- navItem.dataset.page='library';
- const anchor=document.querySelector('.sidebar nav [data-page="materials"]')||document.querySelector('.sidebar nav [data-page="skills"]');
- anchor?anchor.after(navItem):document.querySelector('.sidebar nav').append(navItem);
- const more=document.querySelector('#mobile-menu nav');
- more?.insertAdjacentHTML('beforeend','<a href="#library" data-page="library">▤<div><strong>库</strong><small>公司资产仓库 · 拖拽入库</small></div><span>↗</span></a>');
- more?.querySelector('[data-page="library"]')?.addEventListener('click',()=>document.getElementById('mobile-menu').close());
+ // ---- 页面挂载（左侧导航项与移动端入口由 portal.js / mobile-ui.js 统一生成，这里不再重复插入） ----
 
  document.querySelector('.content').insertAdjacentHTML('beforeend',`
 <section id="library" class="page" hidden>
- <div class="heading"><div><div class="eyebrow">COMPANY LIBRARY</div><h1>库</h1><p>公司的文档、素材与视频都在这里。拖文件进来即入库，正文存 Gitee 仓库，视频存云端。</p></div>
+ <div class="heading"><div><div class="eyebrow">COMPANY LIBRARY</div><h1>资料库</h1><p>公司文件与登记入口的唯一入口。拖文件或整个文件夹进来即入库：正文存 Gitee 仓库，视频与超大文件存云端。</p></div>
  <div class="lib-head-actions">
   <label class="lib-sign" title="上传时给文件贴的署名标签">署名 <select id="lib-sign"></select></label>
-  <button class="button secondary" id="lib-mkdir">＋ 新建文件夹</button>
-  <button class="button secondary" id="lib-refresh">↻ 刷新</button>
-  <button class="button secondary" id="lib-dir-btn">⬆ 上传文件夹</button>
+  <button class="button secondary" id="lib-dir-btn" title="上传整个文件夹，保留目录层级">⬆ 上传文件夹</button>
   <button class="button primary" id="lib-upload-btn">⬆ 上传文件</button>
  </div></div>
  <input id="lib-file-input" type="file" multiple hidden>
  <input id="lib-dir-input" type="file" webkitdirectory directory multiple hidden>
- <div class="lib-toolbar">
-  <div class="lib-crumb" id="lib-crumb">库</div>
+  <div class="lib-toolbar">
+  <div class="lib-crumb" id="lib-crumb">资料库</div>
+  <label class="search lib-search"><span>⌕</span><input id="lib-search" type="search" placeholder="搜索文件名或登记入口" aria-label="搜索资料库"></label>
   <div class="lib-toolbar-right">
+   <button class="button secondary lib-minor" id="lib-mkdir">＋ 新建文件夹</button>
+   <button class="button secondary lib-minor lib-minor-icon" id="lib-refresh" title="刷新列表" aria-label="刷新列表">↻</button>
    <div class="lib-toggle" id="lib-toggle"><button data-view="list" class="active">☰ 列表</button><button data-view="grid">▦ 图标</button></div>
-   <label class="search lib-search"><span>⌕</span><input id="lib-search" type="search" placeholder="搜索全库文件名" aria-label="搜索库"></label>
   </div>
  </div>
  <div class="lib-stats" id="lib-stats"></div>
- <div class="lib-layout">
-  <nav class="lib-tree" id="lib-tree" aria-label="库目录"></nav>
+ <div class="lib-layout" id="lib-layout">
+  <nav class="lib-tree" id="lib-tree" aria-label="资料库侧栏"></nav>
   <div class="lib-main">
    <div class="lib-drop" id="lib-drop"><strong>拖拽文件或整个文件夹到这里入库</strong><span>文件夹会连层级一起建好；文档/图片进 Gitee 仓库并自动署名，视频与大于 50MB 的文件直传云端存储</span></div>
    <div class="lib-progress" id="lib-progress" hidden><div class="lib-progress-bar" id="lib-progress-bar"></div><span id="lib-progress-text"></span></div>
    <div class="lib-head" id="lib-head"><span></span><span>名称</span><span class="lib-author">作者</span><span class="lib-date">日期</span><span class="lib-size">大小</span><span>来源</span><span></span></div>
    <div class="lib-list" id="lib-list"></div>
   </div>
- </div>
- <div class="lib-preview" id="lib-preview" hidden><div class="lib-preview-card card">
+  <aside class="lib-preview" id="lib-preview" hidden><div class="lib-preview-card card">
   <div class="lib-preview-head"><div><strong id="lib-preview-name"></strong><div class="lib-preview-meta" id="lib-preview-meta"></div></div><button class="button secondary" id="lib-preview-close">关闭</button></div>
-  <div class="lib-preview-body" id="lib-preview-body"></div></div></div>
+  <div class="lib-preview-body" id="lib-preview-body"></div></div></aside>
+ </div>
  <div class="lib-menu" id="lib-menu" hidden></div>
  <div class="lib-prompt" id="lib-prompt" hidden><div class="lib-prompt-card card">
   <div class="lib-preview-head"><strong id="lib-prompt-title"></strong></div>
+  <div class="lib-prompt-body" id="lib-prompt-loc-wrap" hidden><label for="lib-prompt-loc">创建位置</label><select id="lib-prompt-loc"></select></div>
   <div class="lib-prompt-body"><label id="lib-prompt-label">名称</label><input id="lib-prompt-input" autocomplete="off"><p class="lib-hint" id="lib-prompt-hint"></p></div>
   <div class="lib-prompt-actions"><button class="button secondary" id="lib-prompt-cancel">取消</button><button class="button primary" id="lib-prompt-ok">确定</button></div>
  </div></div>
@@ -80,6 +79,11 @@
  const fileAuthor=f=>data.meta[f.path]?.author||'';
  const authorName=id=>!id?'—':(data.roster?.[id]||id);
  const tagOf=p=>data.labels?.[p]?.tag||data.meta?.[p]?.author||''; // 署名标签：登记表优先，manifest 兜底
+ // 每个署名固定一个颜色，让「谁上传的」在侧栏与列表里一眼可辨（Finder 标签观感）
+ const TAG_COLORS=['#2f7bd8','#2f9e5f','#c77d1a','#8b5cf6','#d6497a','#0f9b9b'];
+ const tagColor=t=>{const i=(data.tags||[]).findIndex(x=>x.label===t);return i<0?'#8a929f':TAG_COLORS[i%TAG_COLORS.length];};
+ // 目录/文件署名了就在树里点一个颜色点，与「署名标签」同色
+ const treeDot=p=>{const t=tagOf(p);return t?`<span class="lib-tree-tagdot" style="background:${tagColor(t)}" title="署名：${esc(t)}"></span>`:'';};
 
  async function reload(){
   try{data=await api('/api/library/tree');}catch(e){toast(e.message);return;}
@@ -94,23 +98,47 @@
   $id('lib-stats').innerHTML=parts.filter(Boolean).map((t,i)=>`<span class="lib-stat${i===0?' strong':''}">${esc(t)}</span>`).join('<i>·</i>');
  }
 
- function renderTree(){
-  const rows=[];
-  rows.push(`<div class="lib-tree-item lib-tree-sys${pane==='all'?' active':''}" data-pane="all">▤ 全部文件<span class="lib-count">${allFiles().length}</span></div>`);
-  rows.push(`<div class="lib-tree-item lib-tree-sys${pane==='recent'?' active':''}" data-pane="recent">◷ 最近上传<span class="lib-count">${allFiles().length+data.cos.length}</span></div>`);
-  rows.push(`<div class="lib-tree-item lib-tree-sys lib-tree-cos${pane==='@cos'?' active':''}" data-pane="@cos">☁ 云端大文件<span class="lib-count">${data.cos.length}</span></div>`);
-  rows.push('<div class="lib-tree-sep"></div>');
+// 侧栏三段：位置 → 入库登记 → 署名标签 → 目录（真实文件树）。
+// 库根的一级目录 = 仓库里真实存在的同级目录（projects / knowledge / workflows / media 是默认四项，
+// 其余由「新建文件夹 → 库根目录」创建）。界面只做中文标签映射，不动磁盘结构。
+// 空分组不占位：计数为 0 的行直接不渲染（0 个徽标也一并省掉），避免整列被「全是 0」撑满而显得挤。
+function renderTree(){
+ const rows=[],links=portal.links||[];
+ const paneItem=(key,icon,label,count,cls='')=>`<div class="lib-tree-item${cls?' '+cls:''}${pane===key?' active':''}" data-pane="${esc(key)}"><span class="lib-tree-ico">${icon}</span><span class="lib-tree-name">${esc(label)}</span>${count?'<span class="lib-count">'+count+'</span>':''}</div>`;
+ const dirItem=(key,label,count,depth,isRoot)=>{
+   const open=expanded.has(key);
+   return `<div class="lib-tree-item${isRoot?' lib-tree-root':''}${pane===key?' active':''}" style="padding-left:${12+depth*14}px" data-path="${esc(key)}"><span class="lib-tree-ico">${open?'▾':'▸'}</span>${treeDot(key)}<span class="lib-tree-name">${esc(label)}</span><span class="lib-count">${count}</span></div>`;
+  };
+  rows.push('<div class="lib-tree-group">位置</div>');
+  rows.push(paneItem('all','▤','全部文件',allFiles().length,'lib-tree-sys'));
+  rows.push(paneItem('recent','◷','最近上传',allFiles().length+data.cos.length,'lib-tree-sys'));
+  if(data.cos.length)rows.push(paneItem('@cos','☁','云端大文件',data.cos.length,'lib-tree-sys lib-tree-cos'));
+  // 入库登记：只列「有货」的分组；四条全空时压成一行引导，不再摆四个 0
+  rows.push('<div class="lib-tree-group">入库登记</div>');
+  const hitKinds=ENTRY_GROUPS.filter(([kind])=>links.some(l=>l.kind===kind));
+  if(hitKinds.length)for(const [kind,label,icon] of hitKinds)rows.push(paneItem('@entries:'+kind,icon,label,links.filter(l=>l.kind===kind).length,'lib-tree-entry'));
+  else rows.push('<div class="lib-tree-item lib-tree-add" data-goto="#settings"><span class="lib-tree-ico">＋</span><span class="lib-tree-name">登记第一个入口</span></div>');
+  // 署名标签：只列真的挂着内容的署名（文件 + 目录 + 云端）
+  const tagN=label=>allFiles().filter(f=>tagOf(f.path)===label).length+allDirs().filter(d=>tagOf(d.path)===label).length+data.cos.filter(c=>authorName(c.author)===label).length;
+  const tags=(data.tags||[]).map(t=>({label:t.label,n:tagN(t.label)})).filter(t=>t.n);
+  if(tags.length){
+   rows.push('<div class="lib-tree-group">署名标签</div>');
+   for(const t of tags){
+    rows.push(`<div class="lib-tree-item${pane==='@tag:'+t.label?' active':''}" data-pane="${esc('@tag:'+t.label)}"><span class="lib-tree-ico lib-tree-tagdot" style="background:${tagColor(t.label)}"></span><span class="lib-tree-name">${esc(t.label)}</span><span class="lib-count">${t.n}</span></div>`);
+   }
+  }
+  rows.push('<div class="lib-tree-group">目录</div>');
   const roots=data.roots?.length?data.roots:['projects','knowledge','workflows','media'];
   for(const r of roots){
-   const open=expanded.has(r);
-   rows.push(`<div class="lib-tree-item lib-tree-root${pane===r?' active':''}" data-path="${esc(r)}">${open?'▾':'▸'} ${esc(ROOT_LABEL[r]||r)}<span class="lib-count">${dirCount(r)}</span></div>`);
-   if(open)walk(r,1,rows);
+   rows.push(dirItem(r,ROOT_LABEL[r]||r,dirCount(r),0,true));
+   if(expanded.has(r))walk(r,1,rows);
   }
   $id('lib-tree').innerHTML=rows.join('');
   $id('lib-tree').querySelectorAll('[data-pane]').forEach(el=>el.onclick=()=>{pane=el.dataset.pane;renderTree();renderMain();});
+  $id('lib-tree').querySelectorAll('[data-goto]').forEach(el=>el.onclick=()=>{location.hash=el.dataset.goto;});
   $id('lib-tree').querySelectorAll('[data-path]').forEach(el=>el.onclick=e=>{
    const p=el.dataset.path;
-   if(e.target.classList.contains('lib-count')||pane===p){expanded.has(p)?expanded.delete(p):expanded.add(p);}
+   if(e.target.closest('.lib-count')||pane===p){expanded.has(p)?expanded.delete(p):expanded.add(p);}
    else{expanded.add(p);}
    pane=p;renderTree();renderMain();
   });
@@ -118,25 +146,59 @@
  function walk(p,depth,rows){
   for(const d of childDirs(p).sort((a,b)=>a.name.localeCompare(b.name,'zh'))){
    const open=expanded.has(d.path);
-   rows.push(`<div class="lib-tree-item${pane===d.path?' active':''}" style="padding-left:${12+depth*14}px" data-path="${esc(d.path)}">${open?'▾':'▸'} ${esc(d.name)}<span class="lib-count">${dirCount(d.path)}</span></div>`);
+   rows.push(`<div class="lib-tree-item${pane===d.path?' active':''}" style="padding-left:${12+depth*14}px" data-path="${esc(d.path)}"><span class="lib-tree-ico">${open?'▾':'▸'}</span>${treeDot(d.path)}<span class="lib-tree-name">${esc(d.name)}</span><span class="lib-count">${dirCount(d.path)}</span></div>`);
    if(open)walk(d.path,depth+1,rows);
   }
  }
 
  function renderMain(){
-  const crumb=$id('lib-crumb');
-  crumb.innerHTML=pane==='@cos'?'库 / 云端大文件':pane==='recent'?'库 / 最近上传':pane==='all'?'库 / 全部文件':`库 / ${esc(pane.replaceAll('/',' / '))}`;
-  $id('lib-head').style.display=view==='list'?'':'none';
-  const list=$id('lib-list');
+  const crumb=$id('lib-crumb'),list=$id('lib-list');
+  const crumbOf=()=>{
+   if(pane==='@cos')return['位置','云端大文件'];
+   if(pane==='recent')return['位置','最近上传'];
+   if(pane==='all')return['位置','全部文件'];
+   if(pane.startsWith('@entries:'))return['入库登记',ENTRY_LABEL[pane.slice(9)]||''];
+   if(pane.startsWith('@tag:'))return['署名标签',pane.slice(5)];
+   return['目录',pane.replaceAll('/',' / ')];
+  };
+  const [crumbGroup,crumbName]=crumbOf();
+  crumb.innerHTML=`资料库 <span class="lib-crumb-sep">›</span> <b>${esc(crumbGroup)}</b> <span class="lib-crumb-sep">›</span> ${esc(crumbName)}`;
   list.className='lib-list'+(view==='grid'?' lib-list-grid':'');
+  $id('lib-head').style.display=view==='list'?'':'none';
+  const hideHead=()=>{$id('lib-head').style.display='none';};
 
-  if(query){
+  if(query){ // 搜索覆盖全库：登记入口 + 仓库文件 + 云端条目
    const q=query.toLowerCase();
    const hits=allFiles().filter(e=>e.name.toLowerCase().includes(q));
    const cosHits=data.cos.filter(e=>e.name.toLowerCase().includes(q));
-   list.innerHTML=hits.length+cosHits.length
-    ? `<div class="lib-section-label">搜索「${esc(query)}」：${hits.length+cosHits.length} 个结果</div>`+hits.map(rowFile).join('')+cosHits.map(rowCos).join('')
-    : `<div class="lib-empty">没有匹配「${esc(query)}」的文件。<br><span class="lib-hint">换个关键词，或把文件拖进来入库。</span></div>`;
+   const entryHits=(portal.links||[]).filter(l=>`${l.name} ${l.note||''} ${l.instructions||''}`.toLowerCase().includes(q));
+   const total=hits.length+cosHits.length+entryHits.length;
+   list.innerHTML=total
+    ? `<div class="lib-section-label">搜索「${esc(query)}」：${total} 个结果</div>`+entryHits.map(rowEntry).join('')+hits.map(rowFile).join('')+cosHits.map(rowCos).join('')
+    : `<div class="lib-empty">没有匹配「${esc(query)}」的内容。<br><span class="lib-hint">换个关键词，或把文件拖进来入库。</span></div>`;
+   bindRows();wirePortalActions();
+   return;
+  }
+  if(pane.startsWith('@entries:')){ // 登记型栏目：复用 portal.js 的入口卡片，数据仍是 /api/directory
+   const kind=pane.slice(9),links=(portal.links||[]).filter(l=>l.kind===kind);
+   hideHead();
+   list.innerHTML=`<div class="lib-section-label">${esc(ENTRY_LABEL[kind]||kind)} · ${esc(ENTRY_HINT[kind]||'已登记的入口')}<b>${links.length}</b></div>`+
+    (links.length
+     ? `<div class="lib-entry-grid">${links.map(entryCard).join('')}</div>`
+     : `<div class="lib-empty">这一类还没有登记入口。<br><span class="lib-hint">到「入口管理」登记后，会自动出现在这里。</span></div><div class="lib-empty-action"><a class="button secondary" href="#settings">去登记 ↗</a></div>`);
+   wirePortalActions();
+   return;
+  }
+  if(pane.startsWith('@tag:')){ // 署名标签：按人筛选目录、仓库文件与云端条目
+   const tag=pane.slice(5);
+   const ds=allDirs().filter(d=>tagOf(d.path)===tag);
+   const fs_=allFiles().filter(f=>tagOf(f.path)===tag);
+   const cs=data.cos.filter(c=>authorName(c.author)===tag);
+   const n=ds.length+fs_.length+cs.length;
+   list.innerHTML=`<div class="lib-section-label">署名「${esc(tag)}」：${n} 项<b>${n}</b></div>`+
+    (n
+     ? ds.map(rowDir).join('')+fs_.map(rowFile).join('')+cs.map(rowCos).join('')
+     : `<div class="lib-empty">还没有署名为「${esc(tag)}」的内容。<br><span class="lib-hint">上传时在顶栏选署名，或用行尾的 ⋯ 菜单给文件或目录补署名。</span></div>`);
    return bindRows();
   }
   if(pane==='@cos'){
@@ -152,7 +214,7 @@
     :`<div class="lib-empty">还没有内容。<br><span class="lib-hint">把文件拖到上方区域即可入库。</span></div>`;
    return bindRows();
   }
-  if(pane==='all'){ // 全库总览：按分区分组，一屏看得到所有东西
+  if(pane==='all'){ // 全库总览：按一级目录分组，一屏看得到所有东西
    const roots=data.roots?.length?data.roots:['projects','knowledge','workflows','media'];
    let html='';
    for(const r of roots){
@@ -164,6 +226,14 @@
    }
    html+=`<div class="lib-section-label">云端大文件 · COS<b>${data.cos.length}</b></div>`;
    html+=data.cos.length?data.cos.map(rowCos).join(''):'<div class="lib-empty lib-empty-inline">暂无云端文件。</div>';
+   const links=portal.links||[]; // 登记型栏目也列进总览，保持「一个入口看全部」
+   if(links.length){
+    html+=`<div class="lib-section-label">入库登记 · 已登记的入口<b>${links.length}</b></div>`;
+    for(const [kind,label,icon] of ENTRY_GROUPS){
+     const n=links.filter(l=>l.kind===kind).length;
+     if(n)html+=`<div class="lib-row lib-row-dir" data-pane-open="${esc('@entries:'+kind)}"><span class="lib-ico">${icon}</span><span class="lib-name">${esc(label)}/<small>${esc(ENTRY_HINT[kind]||'')}</small></span><span class="lib-author">—</span><span class="lib-date">${n} 项</span><span class="lib-size">—</span><span class="lib-src">登记</span><span class="lib-more lib-more-off">·</span></div>`;
+    }
+   }
    list.innerHTML=html;
    return bindRows();
   }
@@ -176,14 +246,15 @@
  }
 
 function rowDir(d){
- return `<div class="lib-row lib-row-dir${fresh.has(d.path)?' is-new':''}" data-open="${esc(d.path)}"><span class="lib-ico">${ICON.dir}</span><span class="lib-name">${esc(d.name)}/${fresh.has(d.path)?'<b class="lib-new-tag">新</b>':''}</span><span class="lib-author">—</span><span class="lib-date">${dirCount(d.path)} 项</span><span class="lib-size">—</span><span class="lib-src">目录</span><button class="lib-more" data-more="${esc(d.path)}" data-dir="1" type="button" title="操作">⋯</button></div>`;
+ const tag=tagOf(d.path);
+ return `<div class="lib-row lib-row-dir${fresh.has(d.path)?' is-new':''}" data-open="${esc(d.path)}"><span class="lib-ico">${ICON.dir}</span><span class="lib-name">${esc(d.name)}/${fresh.has(d.path)?'<b class="lib-new-tag">新</b>':''}</span><span class="lib-author">${tag?`<b class="lib-tag" style="--c:${tagColor(tag)}">${esc(tag)}</b>`:'<span class="lib-notag">—</span>'}</span><span class="lib-date">${dirCount(d.path)} 项</span><span class="lib-size">—</span><span class="lib-src">目录</span><button class="lib-more" data-more="${esc(d.path)}" data-dir="1" type="button" title="操作">⋯</button></div>`;
 }
  function rowFile(f){
   const k=kindOf(f.name),tag=tagOf(f.path);
   return `<div class="lib-row${fresh.has(f.path)?' is-new':''}" data-preview="${esc(f.path)}" title="${esc(f.path)}">
    <span class="lib-ico">${ICON[k]}</span>
    <span class="lib-name">${esc(f.name)}${fresh.has(f.path)?'<b class="lib-new-tag">新</b>':''}<small>${esc(parentOf(f.path)||'/')}</small></span>
-   <span class="lib-author">${tag?`<b class="lib-tag">${esc(tag)}</b>`:'<span class="lib-notag">未署名</span>'}</span>
+   <span class="lib-author">${tag?`<b class="lib-tag" style="--c:${tagColor(tag)}">${esc(tag)}</b>`:'<span class="lib-notag">未署名</span>'}</span>
    <span class="lib-date">${esc(fileDate(f))}</span>
    <span class="lib-size">${fmtSize(f.size||0)}</span>
    <span class="lib-src">Gitee</span>
@@ -195,10 +266,22 @@ function rowDir(d){
   return `<div class="lib-row${fresh.has(e.name)?' is-new':''}" data-cos="${esc(e.cos)}" title="${esc(e.cos)}">
    <span class="lib-ico">${ICON.cos}</span>
    <span class="lib-name">${esc(e.name)}${st}<small>云端 · ${esc(e.date||'')}</small></span>
-   <span class="lib-author">${tag?`<b class="lib-tag lib-tag-cos">${esc(tag)}</b>`:'<span class="lib-notag">未署名</span>'}</span>
+   <span class="lib-author">${tag?`<b class="lib-tag lib-tag-cos" style="--c:${tagColor(tag)}">${esc(tag)}</b>`:'<span class="lib-notag">未署名</span>'}</span>
    <span class="lib-date">${esc(e.date||'')}</span>
    <span class="lib-size">${e.size_mb&&e.size_mb!=='0.0'?esc(e.size_mb)+' MB':'—'}</span>
    <span class="lib-src lib-src-cos">COS ↗</span>
+   <span class="lib-more lib-more-off">·</span></div>`;
+ }
+ function rowEntry(l){ // 搜索结果里的登记入口行（点击直接打开原链接）
+  const icon=(ENTRY_GROUPS.find(g=>g[0]===l.kind)||[,'','▤'])[2];
+  const href=(typeof safeURL==='function'&&safeURL(l.url))||'';
+  return `<div class="lib-row lib-row-entry" data-entry-url="${esc(href)}" title="${esc(l.url||'')}">
+   <span class="lib-ico">${icon}</span>
+   <span class="lib-name">${esc(l.name)}<small>${esc(ENTRY_LABEL[l.kind]||'入口')}</small></span>
+   <span class="lib-author">${esc(l.createdBy||'本机登记')}</span>
+   <span class="lib-date">—</span>
+   <span class="lib-size">—</span>
+   <span class="lib-src">登记</span>
    <span class="lib-more lib-more-off">·</span></div>`;
  }
  function bindRows(){
@@ -211,6 +294,8 @@ function rowDir(d){
   });
   document.querySelectorAll('#lib-list [data-cos]').forEach(el=>el.onclick=e=>{if(e.target.closest('[data-more]'))return;window.open(el.dataset.cos,'_blank','noopener');});
   document.querySelectorAll('#lib-list [data-preview]').forEach(el=>el.onclick=e=>{if(e.target.closest('[data-more]'))return;preview(el.dataset.preview);});
+  document.querySelectorAll('#lib-list [data-entry-url]').forEach(el=>el.onclick=()=>{if(el.dataset.entryUrl)window.open(el.dataset.entryUrl,'_blank','noopener');});
+  document.querySelectorAll('#lib-list [data-pane-open]').forEach(el=>el.onclick=()=>{pane=el.dataset.paneOpen;renderTree();renderMain();});
  }
 
  // ---- 文件操作：新建文件夹 / 重命名 / 移动 / 贴署名（按要求不做删除） ----
@@ -221,16 +306,14 @@ function rowDir(d){
   return d;
  };
  let menuTarget=null;
- function openMenu(btn,rel,isDir){
-  const m=$id('lib-menu'),tag=isDir?'':tagOf(rel);
-  const items=[`<button data-act="rename">重命名</button>`,`<button data-act="move">移动到…</button>`];
-  if(!isDir){
-   items.push('<div class="lib-menu-sep"></div>');
-   if(tag)items.push(`<div class="lib-menu-note">已署名「${esc(tag)}」，不可修改</div>`);
-   else items.push(`<div class="lib-menu-note">贴署名（选定后不可修改）</div>`,
-    ...(data.tags||[]).map(t=>`<button data-act="tag" data-tag="${esc(t.label)}">署名 ${esc(t.label)}</button>`));
-  }
-  m.innerHTML=items.join('');
+function openMenu(btn,rel,isDir){
+ const m=$id('lib-menu'),tag=tagOf(rel); // 目录与文件一样可以署名
+ const items=[`<button data-act="rename">重命名</button>`,`<button data-act="move">移动到…</button>`];
+ items.push('<div class="lib-menu-sep"></div>');
+ if(tag)items.push(`<div class="lib-menu-note">已署名「${esc(tag)}」，不可修改</div>`);
+ else items.push(`<div class="lib-menu-note">${isDir?'给这个目录署名':'贴署名'}（选定后不可修改）</div>`,
+  ...(data.tags||[]).map(t=>`<button data-act="tag" data-tag="${esc(t.label)}">署名 ${esc(t.label)}</button>`));
+ m.innerHTML=items.join('');
   m.hidden=false;
   const r=btn.getBoundingClientRect();
   m.style.top=Math.min(r.bottom+6,window.innerHeight-260)+'px';
@@ -250,33 +333,51 @@ function rowDir(d){
   const m=$id('lib-menu');
   if(m&&!m.hidden&&!m.contains(e.target)&&!e.target.classList.contains('lib-more'))m.hidden=true;
  });
- let promptOk=null;
- function askText(title,label,value,hint,ok){
-  $id('lib-prompt-title').textContent=title;
-  $id('lib-prompt-label').textContent=label;
-  $id('lib-prompt-input').value=value||'';
-  $id('lib-prompt-hint').textContent=hint||'';
-  $id('lib-prompt').hidden=false;promptOk=ok;
-  setTimeout(()=>{$id('lib-prompt-input').focus();$id('lib-prompt-input').select?.();},30);
- }
- $id('lib-prompt-cancel').onclick=()=>{$id('lib-prompt').hidden=true;promptOk=null;};
- $id('lib-prompt').onclick=e=>{if(e.target.id==='lib-prompt')$id('lib-prompt-cancel').click();};
- $id('lib-prompt-ok').onclick=async()=>{
-  const v=$id('lib-prompt-input').value.trim();if(!promptOk)return;
-  const fn=promptOk;promptOk=null;$id('lib-prompt').hidden=true;await fn(v);
- };
+let promptOk=null;
+function askText(title,label,value,hint,ok,opts={}){
+ $id('lib-prompt-title').textContent=title;
+ $id('lib-prompt-label').textContent=label;
+ $id('lib-prompt-input').value=value||'';
+ $id('lib-prompt-hint').textContent=hint||'';
+ const loc=$id('lib-prompt-loc'),wrap=$id('lib-prompt-loc-wrap');
+ const list=opts.locations||[];
+ if(list.length){ // 「创建位置」下拉：库根 + 各一级目录 + 当前目录
+  loc.innerHTML=list.map(o=>`<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
+  loc.value=list.some(o=>o.value===opts.locValue)?opts.locValue:list[0].value;
+  wrap.hidden=false;
+ }else{wrap.hidden=true;loc.innerHTML='';}
+ $id('lib-prompt').hidden=false;promptOk=ok;
+ setTimeout(()=>{$id('lib-prompt-input').focus();$id('lib-prompt-input').select?.();},30);
+}
+$id('lib-prompt-cancel').onclick=()=>{$id('lib-prompt').hidden=true;promptOk=null;};
+$id('lib-prompt').onclick=e=>{if(e.target.id==='lib-prompt')$id('lib-prompt-cancel').click();};
+$id('lib-prompt-ok').onclick=async()=>{
+ const v=$id('lib-prompt-input').value.trim();if(!promptOk)return;
+ const loc=$id('lib-prompt-loc-wrap').hidden?'':$id('lib-prompt-loc').value;
+ const fn=promptOk;promptOk=null;$id('lib-prompt').hidden=true;await fn(v,loc);
+};
  $id('lib-prompt-input').onkeydown=e=>{if(e.key==='Enter')$id('lib-prompt-ok').click();if(e.key==='Escape')$id('lib-prompt-cancel').click();};
- const curDir=()=>(pane.startsWith('@')||pane==='all'||pane==='recent')?'knowledge':pane;
+// 新建文件夹：位置可选 —— 「库根目录」= 新建一个一级目录，其余选项建在所选目录（含当前所在目录）里。
 $id('lib-mkdir').onclick=()=>{
- const base=curDir();
- askText('新建文件夹','文件夹名称','','将创建在：'+base,async name=>{
-  if(!name)return;
-  try{const d=await post('/api/library/mkdir',{path:`${base}/${name}`});
-   pane=base;expanded.add(base);fresh=new Set([d.path]); // 留在原处，让新建的文件夹高亮可见
-   await reload();toast('已新建文件夹 '+d.path);
-   $id('lib-list').querySelector('.is-new')?.scrollIntoView({block:'nearest',behavior:'smooth'});}
-  catch(e){toast(e.message);}
- });
+ const roots=data.roots?.length?data.roots:[];
+ const inDir=!cwdIsRoot();
+ const locs=[{value:'',label:'库根目录（新建一级目录）'},...roots.map(r=>({value:r,label:'　'+(ROOT_LABEL[r]||r)}))];
+ if(inDir&&!roots.includes(pane))locs.push({value:pane,label:'　当前目录：'+pane});
+ askText('新建文件夹','文件夹名称','','选「库根目录」会在库根新建一个一级目录；选其他项则建在该目录里。',
+  async(name,loc)=>{
+   if(!name)return;
+   if(name.includes('/')){toast('名称里不能带「/」；要建子目录，先在左侧选中它的上级目录。');return;}
+   const rel=loc?`${loc}/${name}`:name;
+   try{const d=await post('/api/library/mkdir',{path:rel});
+    const parent=parentOf(d.path);
+    pane=parent||d.path; // 库里没有「根」的列表视图，建在根时直接进新目录，否则留在原处高亮
+    expanded.add(d.path);
+    if(parent)expanded.add(parent);
+    fresh=new Set([d.path]);
+    await reload();toast((parent?'已新建文件夹 ':'已新建一级目录 ')+d.path);
+    $id('lib-list').querySelector('.is-new')?.scrollIntoView({block:'nearest',behavior:'smooth'});}
+   catch(e){toast(e.message);}
+  },{locations:locs,locValue:inDir?pane:''});
 };
 function askRename(rel,isDir){
  const old=rel.split('/').pop();
@@ -290,7 +391,7 @@ function askRename(rel,isDir){
  });
 }
 function askMove(rel){
- askText('移动到','目标目录（可填子路径）',parentOf(rel)||'knowledge','留空不改；分区：projects、knowledge、workflows、media，也可直接填子路径，如 knowledge/产品',async to=>{
+ askText('移动到','目标目录（可填子路径）',parentOf(rel)||'knowledge','留空不改；可填一级目录（projects、knowledge、workflows、media 或自建的一级目录），也可填子路径，如 knowledge/产品',async to=>{
    if(!to)return;
    const name=rel.split('/').pop(),dest=to.replace(/\/+$/,'');
    try{const d=await post('/api/library/move',{from:rel,to:`${dest}/${name}`});
@@ -350,15 +451,18 @@ function askMove(rel){
   }
   body.querySelectorAll('.md-wikilink').forEach(el=>el.onclick=()=>{ // 点击双链 → 全库搜索该名称
    const t=el.dataset.wiki;$id('lib-search').value=t;query=t.toLowerCase();
-   $id('lib-preview').hidden=true;renderMain();
+   closePreview();renderMain();
   });
  }
- // ---- 预览 ----
+ // ---- 预览（Finder 第三栏：宽屏常驻右栏，窄屏回落为覆盖层） ----
+ const layout=$id('lib-layout');
+ const openPreview=()=>{$id('lib-preview').hidden=false;layout.classList.add('has-preview');};
+ const closePreview=()=>{$id('lib-preview').hidden=true;layout.classList.remove('has-preview');};
  async function preview(rel){
   const name=rel.split('/').pop(),k=kindOf(name);
   $id('lib-preview-name').textContent=name;
   $id('lib-preview-meta').textContent=`${rel}　·　${data.meta[rel]?.author?authorName(data.meta[rel].author)+'　·　':''}${data.meta[rel]?.date||''}`;
-  const body=$id('lib-preview-body');body.innerHTML='加载中…';$id('lib-preview').hidden=false;
+  const body=$id('lib-preview-body');body.innerHTML='加载中…';openPreview();
   try{
    if(k==='image')body.innerHTML=`<img src="/api/library/file?path=${encodeURIComponent(rel)}" alt="${esc(name)}" style="max-width:100%;border-radius:8px">`;
    else if(isMd(name)){
@@ -374,8 +478,8 @@ function askMove(rel){
    }else body.innerHTML='<div class="lib-empty">该类型暂不支持在线预览。<br><span class="lib-hint">可以下载后用本机软件打开。</span></div>';
   }catch(e){body.innerHTML=`<div class="lib-empty">${esc(e.message)}</div>`;}
  }
- $id('lib-preview-close').onclick=()=>$id('lib-preview').hidden=true;
- $id('lib-preview').onclick=e=>{if(e.target.id==='lib-preview')$id('lib-preview').hidden=true;};
+$id('lib-preview-close').onclick=closePreview;
+$id('lib-preview').onclick=e=>{if(e.target.id==='lib-preview')closePreview();};
 
 // ---- 上传（文件 + 文件夹：保留目录层级，空目录也建） ----
 const MAX_FILES=200;   // 与后端上限一致
@@ -441,7 +545,7 @@ function upload(entries,dirs){
  xhr.setRequestHeader('X-CSRF-Token',csrf);
  xhr.send(fd);
 }
-const cwdIsRoot=()=>['all','recent','@cos'].includes(pane);
+const cwdIsRoot=()=>['all','recent','@cos'].includes(pane)||pane.startsWith('@');
 $id('lib-upload-btn').onclick=()=>$id('lib-file-input').click();
 $id('lib-dir-btn').onclick=()=>$id('lib-dir-input').click();
 $id('lib-file-input').onchange=e=>{upload([...e.target.files].map(f=>({file:f,rel:f.name})),[]);e.target.value='';};
@@ -463,5 +567,13 @@ drop.addEventListener('drop',async e=>{
  });
 
  window.addEventListener('hashchange',()=>{if(location.hash==='#library')reload();});
+ document.addEventListener('workroom:directory',()=>{ // 登记条目异步到位后，同步左栏计数与分组视图
+  if(!$id('lib-tree'))return;
+  renderTree();
+  if(pane.startsWith('@entries:'))renderMain();
+ });
  reload();
+ // route() 在本文件挂载前已跑过一次，那时 #library 页还不存在；
+ // 直接用 #library 打开（刷新 / 收藏链接）时要补跑一次，否则页面停在 hidden。
+ if(location.hash==='#library')route();
 })();

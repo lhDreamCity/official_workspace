@@ -31,6 +31,20 @@ h1, h2, h3, .brand, .overview-grid strong { color: var(--brand-navy); }
 .sidebar nav a:hover { background: var(--brand-accent); color: var(--brand-white); }
 .sidebar nav a.active { background: var(--brand-accent); color: var(--brand-white); box-shadow: inset 3px 0 var(--brand-gold); }
 .sidebar nav a.active > span { color: var(--brand-gold); }
+/* 导航分组标题：栏目收敛为「工作记录 / 库 / 设置」三段后的分段标签 */
+.sidebar .nav-group { padding: 20px 10px 7px; font-size: 11px; font-weight: 700; letter-spacing: .1em; color: #8CA3B9; }
+.sidebar .nav-group:first-child { padding-top: 4px; }
+/* 矮视口（笔记本默认高度 ~700）下导航会顶掉底部身份条：让 nav 自己滚，身份条钉在底 */
+.sidebar { overflow: hidden; }
+.sidebar nav { min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: #3D5670 transparent; }
+.sidebar nav::-webkit-scrollbar { width: 6px; }
+.sidebar nav::-webkit-scrollbar-thumb { background: #3D5670; border-radius: 3px; }
+@media (max-height: 780px) {
+  .sidebar { padding-top: 22px; }
+  .sidebar .workspace-label { margin: 20px 8px 10px; }
+  .sidebar nav a { padding-top: 9px; padding-bottom: 9px; }
+  .sidebar .nav-group { padding: 13px 10px 5px; }
+}
 .sidebar .nav-divider { border-top-color: #314A62; }
 .sidebar .identity { border-top-color: #314A62; color: var(--brand-white); }
 .sidebar .identity small { color: #CED9E4; }

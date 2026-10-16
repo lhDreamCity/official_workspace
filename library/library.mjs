@@ -21,7 +21,8 @@ const MEDIA_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.b
 const DOC_EXT = new Set(['.md', '.markdown', '.txt']);
 const PREVIEW_TEXT = new Set(['.md', '.markdown', '.txt', '.yaml', '.yml', '.json', '.csv']);
 const PREVIEW_IMG = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
-const ROOTS = ['projects', 'knowledge', 'workflows', 'media'];
+const ROOTS = ['projects', 'knowledge', 'workflows', 'media']; // 默认分区：库根始终显示这四项，顺序固定
+const HIDDEN_ROOTS = new Set(['scripts', 'node_modules']); // 与库内容无关的基础设施目录，不进库树
 const MIME = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml'};
 
 const day = () => new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit'}).format(new Date());
@@ -171,11 +172,25 @@ function safeJoin(rel) {
   if (target !== WS && !target.startsWith(WS + path.sep)) throw fail(400, '路径无效。');
   return target;
 }
+// 库根的一级目录不是固定四个分区：任何非隐藏、非保留的同级目录都算。
+// 以 . 或 _ 开头的是元数据/临时区（_meta、_inbox、_pending、.git），一律不进库。
+const isRootName = n => !!n && !/^[._]/.test(n) && !HIDDEN_ROOTS.has(n);
 function checkRel(rel) {
   if (!rel || rel.length > 300 || rel.includes('..') || rel.includes('\\')) throw fail(400, '路径无效。');
   const first = rel.split('/')[0];
-  if (!ROOTS.includes(first)) throw fail(400, '只允许库内分区目录。');
+  if (!isRootName(first)) throw fail(400, '路径无效：只允许库内目录。');
   return rel;
+}
+// 库根的可见一级目录：默认四项分区排前，用户自建的一级目录按名称排后。
+async function listRoots() {
+  let names = [];
+  try {
+    names = (await fsp.readdir(WS, {withFileTypes: true}))
+      .filter(it => it.isDirectory() && isRootName(it.name))
+      .map(it => it.name);
+  } catch { /* 读不到就只给默认分区 */ }
+  const extra = names.filter(n => !ROOTS.includes(n)).sort((a, b) => a.localeCompare(b, 'zh'));
+  return [...ROOTS, ...extra];
 }
 
 // ---------- multipart 解析（手写，带总上限） ----------
@@ -226,7 +241,8 @@ async function walk(dir, rel, depth, out, budget) {
 async function tree(user) {
   const out = [];
   const budget = {n: 20000};
-  for (const root of ROOTS) {
+  const roots = await listRoots();
+  for (const root of roots) {
     out.push({path: root, name: root, type: 'dir', root: true}); // 分区本身也作为条目，前端才能画出目录树
     await walk(path.join(WS, root), root, 1, out, budget);
   }
@@ -240,7 +256,7 @@ async function tree(user) {
   const roster = {};
   for (const m of await loadRoster()) roster[m.id] = m.label; // 让前端把署名 id 显示成标签名
   return {
-    entries: out, cos, meta, roots: ROOTS, roster,
+    entries: out, cos, meta, roots, roster,
     labels: await loadAuthors(),   // 路径 → {tag,date,by}：署名标签的唯一来源
     tags: await availableTags(),   // 署名下拉选项
     me,
@@ -302,7 +318,7 @@ async function moveOp(from, to, user) {
   checkRel(from); checkRel(to);
   if (from === to) throw fail(400, '源路径与目标路径相同。');
   if (to.startsWith(from + '/')) throw fail(400, '不能移动到自身的子目录里。');
-  if (!from.includes('/') && to.includes('/')) throw fail(400, '分区目录不能改名，请在各分区内部移动。');
+  if (!from.includes('/') && to.includes('/')) throw fail(400, '一级目录只能在库根内改名，不能挪进子目录。');
   checkNewName(to);
   const src = safeJoin(from), dst = safeJoin(to);
   if (!(await exists(src))) throw fail(400, '源文件不存在。');

@@ -1,12 +1,16 @@
 /* 「库」页面样式：Finder 式左树右表（列表 / 图标两种视图） */
 .lib-head-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
-.lib-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 12px;flex-wrap:wrap}
-.lib-crumb{font-size:14px;color:#627d98;font-weight:600}
-.lib-toolbar-right{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
-.lib-search{flex:0 1 240px;min-width:170px}
+.lib-toolbar{display:flex;align-items:center;gap:14px;margin:0 0 12px;flex-wrap:wrap}
+.lib-crumb{display:flex;align-items:center;gap:7px;font-size:13px;color:#8a929f;font-weight:500}
+.lib-crumb b{color:#3c4257;font-weight:600}
+.lib-crumb-sep{color:#cbd2db}
+.lib-toolbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
+.lib-search{flex:0 1 230px;min-width:160px}
 .lib-toggle{display:inline-flex;background:#eef2f6;border-radius:9px;padding:2px;white-space:nowrap}
 .lib-toggle button{border:none;background:transparent;font:inherit;font-size:12px;color:#627d98;padding:5px 10px;border-radius:7px;cursor:pointer;white-space:nowrap}
 .lib-head-actions button{white-space:nowrap}
+.lib-minor{padding:6px 11px;font-size:12.5px;white-space:nowrap}
+.lib-minor-icon{padding:6px 10px;font-size:14px;line-height:1}
 .lib-toggle button.active{background:#fff;color:#102a43;font-weight:600;box-shadow:0 1px 3px rgba(16,42,67,.08)}
 
 .lib-stats{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0 0 14px;font-size:12px;color:#829ab1}
@@ -14,37 +18,51 @@
 .lib-stat{background:#f7fafc;border:1px solid #e4ebf3;border-radius:8px;padding:3px 9px}
 .lib-stat.strong{color:#2f5d8a;font-weight:600;background:#eef5fc;border-color:#d6e6f7}
 
-.lib-layout{display:grid;grid-template-columns:240px 1fr;gap:20px;align-items:start}
-.lib-tree{background:#fff;border:1px solid #e4ebf3;border-radius:12px;padding:8px 6px;max-height:70vh;overflow:auto}
-.lib-tree-root,.lib-tree-item,.lib-tree-sys{display:flex;align-items:center;gap:6px;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:14px;color:#334e68;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.lib-tree-sys{color:#486581}
-.lib-tree-root{font-weight:700}
-.lib-tree-root:hover,.lib-tree-item:hover,.lib-tree-sys:hover{background:#f0f5fa}
-.lib-tree-root.active,.lib-tree-item.active,.lib-tree-sys.active{background:#e8f0f8;color:#102a43}
-.lib-tree-cos{display:flex;align-items:center;gap:6px}
-.lib-tree-sep{height:1px;background:#e9eef4;margin:6px 10px}
-.lib-count{margin-left:auto;font-size:11px;color:#829ab1;background:#f0f5fa;border-radius:6px;padding:1px 7px;font-weight:600}
-.lib-tree-item.active .lib-count{background:#d9e7f5;color:#2f5d8a}
+/* 主容器：Finder 式窗口 —— 侧栏浅灰 / 列表纯白 / 预览右栏，三栏共用一个圆角卡片 */
+.lib-layout{display:grid;grid-template-columns:236px minmax(0,1fr);align-items:stretch;background:#fff;border:1px solid #e3e6ea;border-radius:12px;overflow:hidden}
+.lib-layout.has-preview{grid-template-columns:236px minmax(0,1fr) minmax(300px,420px)}
+.lib-tree{background:#f6f7f9;border:none;border-right:1px solid #e7eaee;border-radius:0;padding:12px 8px 18px;max-height:72vh;overflow:auto;margin:0;scrollbar-width:thin;scrollbar-color:#c3ccd8 transparent}
+.lib-tree::-webkit-scrollbar{width:8px}
+.lib-tree::-webkit-scrollbar-thumb{background:#c9d2dc;border-radius:4px}
+.lib-tree-group{padding:20px 10px 7px;font-size:11px;font-weight:700;color:#9aa1ad;letter-spacing:.08em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lib-tree-group:first-child{padding-top:6px}
+.lib-tree-root,.lib-tree-item,.lib-tree-sys{display:flex;align-items:center;gap:7px;padding:7px 9px;border-radius:7px;cursor:pointer;font-size:13.5px;color:#3c4257;white-space:nowrap;overflow:hidden;transition:background .12s}
+.lib-tree-sys{color:#4b5565}
+.lib-tree-root{font-weight:600}
+.lib-tree-entry{color:#4b5565}
+.lib-tree-root:hover,.lib-tree-item:hover,.lib-tree-sys:hover{background:#eceef2}
+.lib-tree-root.active,.lib-tree-item.active,.lib-tree-sys.active{background:#dde5ef;color:#1c2b3a;font-weight:600}
+.lib-tree-cos{color:#7c5e10}
+/* 空「入库登记」压成的一行引导：不用选中态，虚线感，指向入口管理 */
+.lib-tree-add{color:#8a929f;border:1px dashed #d7dde5;padding:6px 8px}
+.lib-tree-add:hover{background:#f2f5f8;color:#2f5d8a;border-color:#b8c9d9}
+.lib-tree-add .lib-tree-ico{font-weight:700}
+.lib-tree-ico{flex:0 0 15px;width:15px;text-align:center;font-size:13px;line-height:1;color:#7c8595;font-style:normal}
+.lib-tree-tagdot{flex:0 0 9px;width:9px;height:9px;margin:0 3px;border-radius:50%;background:#2f5d8a}
+.lib-tree-name{flex:1;overflow:hidden;text-overflow:ellipsis}
+.lib-tree-sep{height:1px;background:#e7eaee;margin:6px 10px}
+.lib-count{margin-left:auto;flex:0 0 auto;font-size:11px;color:#8a929f;background:#eceef2;border-radius:6px;padding:0 6px;font-weight:600}
+.lib-tree-item.active .lib-count{background:#cbd8e8;color:#2f5d8a}
 .lib-badge{font-size:11px;background:#d9e7f5;color:#2f5d8a;border-radius:6px;padding:1px 6px}
 
-.lib-main{min-width:0}
-.lib-drop{border:2px dashed #b8c9d9;border-radius:12px;padding:20px;text-align:center;color:#627d98;background:#fbfdff;transition:.15s;display:flex;flex-direction:column;gap:4px}
-.lib-drop strong{color:#334e68;font-size:15px}
-.lib-drop span{font-size:13px}
+.lib-main{min-width:0;display:flex;flex-direction:column;background:#fff;max-height:72vh;overflow:auto}
+.lib-drop{margin:12px 14px 0;border:1.5px dashed #c3ccd8;border-radius:10px;padding:12px 14px;text-align:center;color:#7b8794;background:#fbfcfd;transition:.15s;display:flex;flex-direction:column;gap:2px}
+.lib-drop strong{color:#3c4257;font-size:14px}
+.lib-drop span{font-size:12px}
 .lib-drop.over{border-color:#2f5d8a;background:#eef5fc}
-.lib-progress{margin:12px 0;background:#e4ebf3;border-radius:8px;height:26px;position:relative;overflow:hidden}
+.lib-progress{margin:12px 14px 0;background:#e7eaee;border-radius:8px;height:24px;position:relative;overflow:hidden}
 .lib-progress-bar{height:100%;background:#2f5d8a;transition:width .2s;width:0}
 .lib-progress span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#102a43;font-weight:600}
 
-.lib-head{display:grid;grid-template-columns:28px 1fr 84px 96px 78px 68px 24px;gap:8px;padding:0 16px 8px;margin-top:14px;font-size:11px;color:#9fb3c8;font-weight:700;letter-spacing:.02em}
+.lib-head{display:grid;grid-template-columns:28px 1fr 84px 96px 78px 68px 24px;gap:8px;padding:0 16px 8px;margin:14px 0 0;font-size:11px;color:#9fb3c8;font-weight:700;letter-spacing:.02em}
 .lib-head .lib-author,.lib-head .lib-date,.lib-head .lib-size{text-align:right}
 .lib-head>span:nth-last-child(2){text-align:center}
-.lib-list{background:#fff;border:1px solid #e4ebf3;border-radius:12px;overflow:hidden}
-.lib-section-label{padding:9px 16px;font-size:12px;font-weight:700;color:#829ab1;background:#f7fafc;border-bottom:1px solid #e4ebf3;display:flex;align-items:center;gap:8px}
+.lib-list{background:transparent;border:none;border-radius:0;flex:1}
+.lib-section-label{padding:9px 16px;font-size:12px;font-weight:700;color:#8a929f;background:#fafbfc;border-bottom:1px solid #eff1f4;display:flex;align-items:center;gap:8px}
 .lib-section-label b{margin-left:auto;font-size:11px;color:#627d98;background:#eef2f6;border-radius:6px;padding:1px 7px}
-.lib-row{display:grid;grid-template-columns:28px 1fr 84px 96px 78px 68px 24px;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid #eef2f6;cursor:pointer;font-size:14px}
+.lib-row{display:grid;grid-template-columns:28px 1fr 84px 96px 78px 68px 24px;align-items:center;gap:8px;padding:9px 16px;border-bottom:1px solid #f1f2f4;cursor:pointer;font-size:14px}
 .lib-row:last-child{border-bottom:none}
-.lib-row:hover{background:#f7fafc}
+.lib-row:hover{background:#f7f9fb}
 .lib-row.is-new{background:#eef8f1;box-shadow:inset 3px 0 0 #2f9e5f}
 .lib-row-dir{font-weight:600;color:#2f5d8a}
 .lib-ico{color:#627d98;text-align:center;font-size:16px}
@@ -62,9 +80,18 @@
 /* 署名标签：谁上传的（登记表登记，一经署名不可修改） */
 .lib-sign{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#627d98;background:#f7fafc;border:1px solid #e4ebf3;border-radius:9px;padding:4px 8px 4px 10px;white-space:nowrap}
 .lib-sign select{border:none;background:transparent;font:inherit;font-size:13px;color:#243b53;font-weight:600;cursor:pointer;outline:none;max-width:110px}
-.lib-tag{display:inline-block;font-size:11px;font-weight:600;color:#2f5d8a;background:#e8f0f8;border:1px solid #d6e6f7;border-radius:6px;padding:1px 7px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.lib-tag-cos{color:#7c5e10;background:#faf0d7;border-color:#f0e0b4}
+.lib-tag{display:inline-block;font-size:11px;font-weight:600;color:var(--c,#2f5d8a);background:#fff;border:1px solid var(--c,#2f5d8a);border-radius:6px;padding:1px 7px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lib-tag-cos{color:var(--c,#7c5e10);background:#fff;border-color:var(--c,#7c5e10)}
 .lib-notag{font-size:11px;color:#b6c6d6}
+
+/* 「入库登记」分组视图：复用 portal.js 的入口卡片，按 Finder 的网格排布 */
+.lib-row-entry .lib-ico{color:#2f5d8a}
+.lib-empty-action{text-align:center;padding:0 16px 22px}
+.lib-entry-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:12px;padding:16px}
+.lib-entry-grid .directory-card{margin:0;height:100%;background:#fff;border:1px solid #e6e9ed;border-radius:10px;padding:14px 15px}
+.lib-entry-grid .directory-card:hover{border-color:#c3ccd8;box-shadow:0 6px 18px rgba(16,42,67,.07)}
+.lib-entry-grid .directory-card h2{font-size:14.5px}
+.lib-entry-grid .directory-card p{font-size:12.5px}
 
 /* 行内操作入口（⋯）：重命名 / 移动到 / 贴署名 */
 .lib-more{border:none;background:transparent;font:inherit;font-size:15px;line-height:1;color:#9fb3c8;cursor:pointer;border-radius:6px;padding:3px 4px;text-align:center}
@@ -85,6 +112,9 @@
 .lib-prompt-body label{font-size:12px;font-weight:700;color:#627d98}
 .lib-prompt-body input{border:1px solid #d6e0ea;border-radius:9px;padding:10px 12px;font:inherit;font-size:14px;color:#243b53;outline:none}
 .lib-prompt-body input:focus{border-color:#2f5d8a;box-shadow:0 0 0 3px rgba(47,93,138,.12)}
+.lib-prompt-body+.lib-prompt-body{padding-top:0}
+.lib-prompt-body select{border:1px solid #d6e0ea;border-radius:9px;padding:9px 10px;font:inherit;font-size:13.5px;color:#243b53;background:#fff;outline:none;cursor:pointer;width:100%}
+.lib-prompt-body select:focus{border-color:#2f5d8a;box-shadow:0 0 0 3px rgba(47,93,138,.12)}
 .lib-prompt-body .lib-hint{margin:0;min-height:16px;line-height:1.5;word-break:break-word}
 .lib-prompt-actions{display:flex;justify-content:flex-end;gap:10px;padding:6px 18px 16px}
 
@@ -101,11 +131,12 @@
 .lib-list-grid .lib-author,.lib-list-grid .lib-date,.lib-list-grid .lib-size{display:none}
 .lib-list-grid .lib-src{margin-top:2px}
 
-.lib-preview{position:fixed;inset:0;background:rgba(16,42,67,.45);display:flex;align-items:center;justify-content:center;z-index:60;padding:20px}
-.lib-preview-card{background:#fff;border-radius:14px;max-width:880px;width:100%;max-height:84vh;display:flex;flex-direction:column;overflow:hidden}
-.lib-preview-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid #e4ebf3}
-.lib-preview-meta{font-size:12px;color:#829ab1;margin-top:4px}
-.lib-preview-body{padding:18px;overflow:auto}
+/* 预览：宽屏作为第三栏常驻，窄屏回落为覆盖层（见文件末尾媒体查询） */
+.lib-preview{position:static;inset:auto;display:block;background:#fbfcfd;border-left:1px solid #e7eaee;overflow:auto;max-height:72vh;z-index:auto;padding:0}
+.lib-preview-card{background:transparent;border:none;box-shadow:none;border-radius:0;max-width:none;width:auto;max-height:none;display:flex;flex-direction:column;overflow:visible}
+.lib-preview-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid #e7eaee;background:#fbfcfd;position:sticky;top:0;z-index:2}
+.lib-preview-meta{font-size:12px;color:#829ab1;margin-top:4px;word-break:break-all}
+.lib-preview-body{padding:16px;overflow:visible}
 .lib-pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-word;color:#243b53;margin:0}
 /* Markdown 渲染视图：对齐 Obsidian 阅读模式的排版语言（正文 700px 行宽、属性面板、行内代码、引用块、双链、标签） */
 .lib-md{max-width:700px;margin:0 auto;font-size:16px;line-height:1.65;color:#2e3338;word-wrap:break-word;
@@ -146,12 +177,19 @@
 .lib-md .md-tag{background:rgba(127,109,242,.12);color:#705dcf;border-radius:999px;padding:1px 8px;font-size:.9em;white-space:nowrap}
 .lib-md .md-wikilink{color:#705dcf;background:rgba(127,109,242,.1);border-radius:4px;padding:0 3px;cursor:pointer}
 .lib-md .md-wikilink:hover{text-decoration:underline}
-.lib-preview-card{max-width:940px}
-.lib-preview-body{padding:22px 26px}
+/* 窄屏：预览回落为居中覆盖层；三栏先退回两栏，再退回单栏 */
+@media (max-width:1180px){
+ .lib-layout.has-preview{grid-template-columns:236px minmax(0,1fr)}
+ .lib-preview{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:60;padding:20px;background:rgba(16,42,67,.45);border-left:none;max-height:none}
+ .lib-preview-card{background:#fff;border-radius:14px;box-shadow:0 24px 60px rgba(16,42,67,.28);max-width:940px;width:100%;max-height:84vh;overflow:hidden}
+ .lib-preview-head{background:#fff;position:static;border-radius:14px 14px 0 0}
+ .lib-preview-body{padding:22px 26px;overflow:auto}
+}
 
 @media (max-width:860px){
  .lib-layout{grid-template-columns:1fr}
- .lib-tree{max-height:220px}
+ .lib-tree{max-height:260px;border-right:none;border-bottom:1px solid #e7eaee}
+ .lib-main{max-height:none}
  .lib-head{display:none}
  .lib-row{grid-template-columns:24px 1fr 64px 22px;gap:6px}
  .lib-author,.lib-date,.lib-size{display:none}
