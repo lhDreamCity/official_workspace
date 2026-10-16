@@ -1,5 +1,5 @@
 /* 「库」页面样式：Finder 式左树右表（列表 / 图标两种视图） */
-.lib-head-actions{display:flex;gap:10px;align-items:center}
+.lib-head-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 .lib-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 12px;flex-wrap:wrap}
 .lib-crumb{font-size:14px;color:#627d98;font-weight:600}
 .lib-toolbar-right{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}

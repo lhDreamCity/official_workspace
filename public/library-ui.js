@@ -34,9 +34,11 @@
   <label class="lib-sign" title="上传时给文件贴的署名标签">署名 <select id="lib-sign"></select></label>
   <button class="button secondary" id="lib-mkdir">＋ 新建文件夹</button>
   <button class="button secondary" id="lib-refresh">↻ 刷新</button>
+  <button class="button secondary" id="lib-dir-btn">⬆ 上传文件夹</button>
   <button class="button primary" id="lib-upload-btn">⬆ 上传文件</button>
  </div></div>
  <input id="lib-file-input" type="file" multiple hidden>
+ <input id="lib-dir-input" type="file" webkitdirectory directory multiple hidden>
  <div class="lib-toolbar">
   <div class="lib-crumb" id="lib-crumb">库</div>
   <div class="lib-toolbar-right">
@@ -48,7 +50,7 @@
  <div class="lib-layout">
   <nav class="lib-tree" id="lib-tree" aria-label="库目录"></nav>
   <div class="lib-main">
-   <div class="lib-drop" id="lib-drop"><strong>拖拽文件到这里入库</strong><span>文档/图片进 Gitee 仓库并自动署名；视频与大于 50MB 的文件直传云端存储</span></div>
+   <div class="lib-drop" id="lib-drop"><strong>拖拽文件或整个文件夹到这里入库</strong><span>文件夹会连层级一起建好；文档/图片进 Gitee 仓库并自动署名，视频与大于 50MB 的文件直传云端存储</span></div>
    <div class="lib-progress" id="lib-progress" hidden><div class="lib-progress-bar" id="lib-progress-bar"></div><span id="lib-progress-text"></span></div>
    <div class="lib-head" id="lib-head"><span></span><span>名称</span><span class="lib-author">作者</span><span class="lib-date">日期</span><span class="lib-size">大小</span><span>来源</span><span></span></div>
    <div class="lib-list" id="lib-list"></div>
@@ -375,42 +377,84 @@ function askMove(rel){
  $id('lib-preview-close').onclick=()=>$id('lib-preview').hidden=true;
  $id('lib-preview').onclick=e=>{if(e.target.id==='lib-preview')$id('lib-preview').hidden=true;};
 
- // ---- 上传 ----
- function upload(files){
-  if(!files.length)return;
-  if(cwdIsRoot())pane='knowledge'; // 总览视角下上传，默认进知识库并跳过去，方便立刻看到结果
-  const target=pane.startsWith('@')||pane==='all'||pane==='recent'?'knowledge':pane;
-  const fd=new FormData();
-  fd.append('path',target);
-  fd.append('tag',$id('lib-sign')?.value||''); // 署名标签（空 = 不署名）
-  for(const f of files)fd.append('files',f,f.name);
-  const xhr=new XMLHttpRequest();
-  const prog=$id('lib-progress'),bar=$id('lib-progress-bar'),text=$id('lib-progress-text');
-  prog.hidden=false;bar.style.width='0%';text.textContent=`上传 ${files.length} 个文件…`;
-  xhr.upload.onprogress=e=>{if(e.lengthComputable)bar.style.width=Math.round(e.loaded/e.total*100)+'%';};
-  xhr.onload=async()=>{
-   prog.hidden=true;
-   let res;try{res=JSON.parse(xhr.responseText);}catch{res={error:'服务返回异常。'};}
-   if(xhr.status!==200){toast(res.error||'上传失败，请稍后重试。');return;}
-   fresh=new Set(res.results.map(r=>r.path||r.name));
-   pane=target;
-   await reload();
-   toast(`入库完成（署名 ${res.author}）：`+res.results.map(r=>`${r.name} → ${r.route==='cos'?'云端存储':'Gitee 仓库'}`).join('；'));
-   $id('lib-list').querySelector('.is-new')?.scrollIntoView({block:'nearest',behavior:'smooth'});
-  };
-  xhr.onerror=()=>{prog.hidden=true;toast('网络请求失败，请稍后重试。');};
-  xhr.open('POST','/api/upload');
-  xhr.setRequestHeader('X-CSRF-Token',csrf);
-  xhr.send(fd);
+// ---- 上传（文件 + 文件夹：保留目录层级，空目录也建） ----
+const MAX_FILES=200;   // 与后端上限一致
+const MAX_DIRS=2000;
+const relOfFile=f=>(f.webkitRelativePath||'').replace(/\\/g,'/')||f.name; // 目录选择器会给 webkitRelativePath
+async function walkEntry(entry,prefix,files,dirs,depth=0){ // 拖入目录时浏览器只给 entry 句柄，必须递归展开
+ if(entry.isFile){
+  const file=await new Promise(res=>entry.file(res,()=>res(null)));
+  if(file)files.push({file,rel:prefix+entry.name});
+  return;
  }
- const cwdIsRoot=()=>['all','recent','@cos'].includes(pane);
- $id('lib-upload-btn').onclick=()=>$id('lib-file-input').click();
- $id('lib-file-input').onchange=e=>{upload([...e.target.files]);e.target.value='';};
- $id('lib-refresh').onclick=()=>reload().then(()=>toast('已刷新。'));
- const drop=$id('lib-drop');
- ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over');}));
- ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over');}));
- drop.addEventListener('drop',e=>upload([...e.dataTransfer.files]));
+ if(depth>8)return; // 防止异常嵌套把浏览器拖死
+ const reader=entry.createReader(),kids=[];
+ for(;;){
+  const batch=await new Promise(res=>reader.readEntries(res,()=>res([])));
+  if(!batch.length)break;
+  kids.push(...batch);
+ }
+ const self=prefix+entry.name;
+ if(!kids.length){dirs.push(self);return;} // 空目录不会产生文件条目，单独登记
+ for(const k of kids)await walkEntry(k,self+'/',files,dirs,depth+1);
+}
+async function collectFromDrop(dt){
+ const roots=(dt.items?[...dt.items]:[]).map(it=>it.webkitGetAsEntry?.()).filter(Boolean); // 必须同步取，事件结束后句柄失效
+ if(!roots.length)return{files:[...dt.files].map(f=>({file:f,rel:f.name})),dirs:[]};
+ const files=[],dirs=[];
+ for(const r of roots)await walkEntry(r,'',files,dirs);
+ return{files,dirs};
+}
+function upload(entries,dirs){
+ if(!entries.length&&!dirs.length){toast('没有可上传的内容。');return;}
+ const overflow=Math.max(0,entries.length-MAX_FILES);
+ if(overflow)entries=entries.slice(0,MAX_FILES);
+ if(cwdIsRoot())pane='knowledge'; // 总览视角下上传，默认进知识库并跳过去，方便立刻看到结果
+ const target=pane.startsWith('@')||pane==='all'||pane==='recent'?'knowledge':pane;
+ const fd=new FormData();
+ fd.append('path',target);
+ fd.append('tag',$id('lib-sign')?.value||''); // 署名标签（空 = 不署名）
+ if(dirs.length)fd.append('dirs',dirs.slice(0,MAX_DIRS).join('\n'));
+ for(const e of entries)fd.append('files',e.file,e.rel||e.file.name); // 第三个参数是 multipart 里的 filename，目录层级就靠它带过去
+ const xhr=new XMLHttpRequest();
+ const prog=$id('lib-progress'),bar=$id('lib-progress-bar'),text=$id('lib-progress-text');
+ prog.hidden=false;bar.style.width='0%';
+ text.textContent=`上传 ${entries.length} 个文件${dirs.length?` + ${dirs.length} 个空文件夹`:''}…`;
+ xhr.upload.onprogress=e=>{if(e.lengthComputable)bar.style.width=Math.round(e.loaded/e.total*100)+'%';};
+ xhr.onload=async()=>{
+  prog.hidden=true;
+  let res;try{res=JSON.parse(xhr.responseText);}catch{res={error:'服务返回异常。'};}
+  if(xhr.status!==200){toast(res.error||'上传失败，请稍后重试。');return;}
+  fresh=new Set(res.results.map(r=>r.path||r.name));
+  pane=target;
+  await reload();
+  const cnt=k=>res.results.filter(r=>r.route===k).length;
+  const parts=[];
+  if(cnt('dir'))parts.push(`${cnt('dir')} 个文件夹`);
+  if(cnt('git'))parts.push(`${cnt('git')} 个文件入 Gitee`);
+  if(cnt('cos'))parts.push(`${cnt('cos')} 个大文件入云端`);
+  toast(`入库完成（署名 ${res.tag||'不署名'}）：${parts.join(' + ')||'无变化'}${res.skipped?`；跳过 ${res.skipped} 个隐藏项（. 或 _ 开头）`:''}${overflow?`；超出 ${MAX_FILES} 个上限，跳过 ${overflow} 个`:''}`);
+  $id('lib-list').querySelector('.is-new')?.scrollIntoView({block:'nearest',behavior:'smooth'});
+ };
+ xhr.onerror=()=>{prog.hidden=true;toast('网络请求失败，请稍后重试。');};
+ xhr.open('POST','/api/upload');
+ xhr.setRequestHeader('X-CSRF-Token',csrf);
+ xhr.send(fd);
+}
+const cwdIsRoot=()=>['all','recent','@cos'].includes(pane);
+$id('lib-upload-btn').onclick=()=>$id('lib-file-input').click();
+$id('lib-dir-btn').onclick=()=>$id('lib-dir-input').click();
+$id('lib-file-input').onchange=e=>{upload([...e.target.files].map(f=>({file:f,rel:f.name})),[]);e.target.value='';};
+$id('lib-dir-input').onchange=e=>{upload([...e.target.files].map(f=>({file:f,rel:relOfFile(f)})),[]);e.target.value='';};
+$id('lib-refresh').onclick=()=>reload().then(()=>toast('已刷新。'));
+const drop=$id('lib-drop');
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over');}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over');}));
+drop.addEventListener('drop',async e=>{
+ e.preventDefault();
+ try{const{files,dirs}=await collectFromDrop(e.dataTransfer);upload(files,dirs);}
+ catch{toast('读取拖入内容失败，请改用「上传文件夹」按钮。');}
+});
  $id('lib-search').oninput=e=>{query=e.target.value.trim().toLowerCase();renderMain();};
  $id('lib-toggle').querySelectorAll('button').forEach(b=>b.onclick=()=>{
   view=b.dataset.view;

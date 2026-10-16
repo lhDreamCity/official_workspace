@@ -26,6 +26,26 @@ const MIME = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', 
 
 const day = () => new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit'}).format(new Date());
 const sanitize = name => String(name).replace(/[<>:\"/\\|?*\u0000-\u001f]+/g, '_').trim().slice(0, 120) || '未命名';
+/**
+ * 上传文件名按「相对路径」解析：文件夹上传时前端会把 webkitRelativePath 塞进 filename。
+ * 任一段是隐藏/保留项（. 或 _ 开头，.DS_Store / __MACOSX / _草稿 之类）→ 整条跳过，
+ * 绝不把内容挪到上一层（否则会出现「内容跑到父目录」这种吓人的静默改名）。
+ * @returns {string|null} 消毒后的相对路径；null = 跳过该条目
+ */
+function safeRelPath(raw, maxDepth = 10) {
+  const segs = String(raw).split(/[\\/]+/).map(s => s.trim()).filter(Boolean);
+  if (!segs.length) return null;
+  const bad = s => !s || s === '.' || s === '..' || s.startsWith('.') || s.startsWith('_');
+  const out = [];
+  for (const s of segs) {
+    if (bad(s)) return null;
+    const clean = sanitize(s);
+    if (bad(clean)) return null; // 消毒后变成空或 _ 开头，同样跳过
+    out.push(clean);
+  }
+  if (out.length > maxDepth) return null; // 层级过深直接拒，不做截断（截断=静默改名）
+  return out.join('/');
+}
 
 // ---------- 花名册：企微姓名 → 署名身份 ----------
 async function loadRoster() {
@@ -340,10 +360,11 @@ async function upload(req, user) {
   const files = [];
   for (const p of parts) {
     if (p.filename !== undefined) { if (p.filename) files.push(p); }
-    else if (p.name) fields[p.name] = p.data.toString('utf8').slice(0, 500);
+    // dirs 是「空文件夹相对路径」清单，可能很长，单独放宽上限
+    else if (p.name) fields[p.name] = p.data.toString('utf8').slice(0, p.name === 'dirs' ? 60000 : 500);
   }
-  if (!files.length) throw fail(400, '没有选择文件。');
-  if (files.length > 20) throw fail(400, '一次最多上传 20 个文件。');
+  if (!files.length && !fields.dirs) throw fail(400, '没有选择文件。');
+  if (files.length > 200) throw fail(400, '一次最多上传 200 个文件，请分批。');
 
   const author = await resolveAuthor(user.name);
   const rosterHit = (await loadRoster()).find(m => m.name === user.name);
@@ -357,23 +378,42 @@ async function upload(req, user) {
   await fsp.mkdir(targetDir, {recursive: true});
 
   const results = [], touched = new Set(), manifestLines = [], authorsNew = {};
+  let skipped = 0; // 被跳过的干扰项（.DS_Store / _ 开头的目录等），回给前端如实告知
+
+  // 先建空文件夹（浏览器不会为没有文件的目录产生条目，所以前端单独传一份清单）
+  for (const raw of String(fields.dirs || '').split('\n')) {
+    const sub = safeRelPath(raw);
+    if (!sub) { if (raw.trim()) skipped += 1; continue; }
+    const dir = path.join(targetDir, sub);
+    await fsp.mkdir(dir, {recursive: true});
+    await fsp.writeFile(path.join(dir, KEEP), '');
+    const dirRel = path.relative(WS, dir).split(path.sep).join('/');
+    touched.add(`${dirRel}/${KEEP}`);
+    results.push({name: `${sub}/`, route: 'dir', path: dirRel});
+  }
+
   for (const f of files) {
-    const name = sanitize(f.filename);
+    const relSub = safeRelPath(f.filename); // 文件夹上传时形如 "docs/子目录/文件.md"
+    if (!relSub) { skipped += 1; continue; }
+    const name = path.basename(relSub), subDir = path.dirname(relSub);
     const ext = path.extname(name).toLowerCase();
     if (VIDEO_EXT.has(ext) || f.data.length > GIT_MAX) {
-      // COS 路由
+      // COS 路由（对象存储按类型+日期扁平存放，不保留目录层级；层级信息记进 manifest）
       if (!cfg) throw fail(503, '云端存储未配置，请联系管理员。');
       const subdir = VIDEO_EXT.has(ext) ? 'videos' : 'assets';
       const key = cosKeyFor(cfg, name, subdir);
       const r = await putBuffer(cfg, key, f.data);
-      manifestLines.push(`- name: ${name}\n  author: ${tag || ''}\n  date: ${day()}\n  size_mb: ${(f.data.length / 1048576).toFixed(1)}\n  status: stored\n  cos: ${r.url}\n`);
+      const label = subDir && subDir !== '.' ? `${subDir}/${name}` : name;
+      manifestLines.push(`- name: ${label}\n  author: ${tag || ''}\n  date: ${day()}\n  size_mb: ${(f.data.length / 1048576).toFixed(1)}\n  status: stored\n  cos: ${r.url}\n`);
       results.push({name, route: 'cos', url: r.url});
     } else {
-      // git 路由（重名加日期后缀，再重加序号）
-      let dest = path.join(targetDir, name);
+      // git 路由：保留文件夹层级（重名加日期后缀，再重加序号）
+      const outDir = subDir && subDir !== '.' ? path.join(targetDir, subDir) : targetDir;
+      await fsp.mkdir(outDir, {recursive: true});
+      let dest = path.join(outDir, name);
       let stem = path.basename(name, ext), n = 0;
       while (true) {
-        try { await fsp.access(dest); n += 1; dest = path.join(targetDir, n === 1 ? `${stem}-${day()}${ext}` : `${stem}-${day()}-${n}${ext}`); }
+        try { await fsp.access(dest); n += 1; dest = path.join(outDir, n === 1 ? `${stem}-${day()}${ext}` : `${stem}-${day()}-${n}${ext}`); }
         catch { break; }
       }
       await fsp.writeFile(dest, f.data);
@@ -399,11 +439,18 @@ async function upload(req, user) {
 
   let committed = false;
   if (touched.size) {
-    const names = results.filter(r => r.route === 'git').map(r => r.name).slice(0, 5).join('、') || '大文件登记';
-    const msg = `upload: ${tag || '未署名'} 上传 ${names}${results.length > 5 ? ' 等' : ''}`;
+    const gitFiles = results.filter(r => r.route === 'git').length;
+    const dirs = results.filter(r => r.route === 'dir').length;
+    const cosFiles = results.filter(r => r.route === 'cos').length;
+    const names = results.filter(r => r.route === 'git').map(r => r.name).slice(0, 3).join('、');
+    const parts = [];
+    if (dirs) parts.push(`${dirs} 个文件夹`);
+    if (gitFiles) parts.push(`${gitFiles} 个文件（${names}${gitFiles > 3 ? ' 等' : ''}）`);
+    if (cosFiles) parts.push(`${cosFiles} 个大文件入云端`);
+    const msg = `upload: ${tag || '未署名'} 上传 ${parts.join(' + ') || '大文件登记'}`;
     committed = await gitCommitPush(msg, author, [...touched]);
   }
-  return {results, committed, author: author.name, tag: tag || ''};
+  return {results, committed, author: author.name, tag: tag || '', skipped};
 }
 
 // ---------- 入口 ----------
