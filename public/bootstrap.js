@@ -8,7 +8,7 @@
  try{
   auth=await api('/api/auth-config');if(!['wecom','feishu'].includes(auth.provider))throw Error('登录配置异常，请联系管理员。');
   const identity=await api('/api/me');window.Workroom={...identity,api,records:(await api('/api/records')).records};
-  for(const name of ['deletion.js','app.js','portal.js?v=f584b13d56ad','team.js','mobile-ui.js?v=176d6aa585c2','hub.js?v=4c35e9c37cd8','journal-ui.js?v=768059897bf3','vendor/marked.js?v=4d0ddeac021f','vendor/purify.js?v=52abf5cb41ad','vendor/highlight.js?v=662960b539f7','vendor/hljs-langs.js?v=f0b754a7d072','library-ui.js?v=b2bcccc44682'])await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src=name;script.onload=resolve;script.onerror=()=>reject(Error('页面资源未加载，请刷新后重试。'));document.body.append(script);});
+  for(const name of ['deletion.js','app.js','portal.js?v=f584b13d56ad','team.js','mobile-ui.js?v=176d6aa585c2','hub.js?v=4c35e9c37cd8','journal-ui.js?v=768059897bf3','vendor/marked.js?v=4d0ddeac021f','vendor/purify.js?v=52abf5cb41ad','vendor/highlight.js?v=662960b539f7','vendor/hljs-langs.js?v=f0b754a7d072','library-ui.js?v=88edbf7e61f4'])await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src=name;script.onload=resolve;script.onerror=()=>reject(Error('页面资源未加载，请刷新后重试。'));document.body.append(script);});
   document.querySelector('.identity').innerHTML=`<span class="avatar">${safe(identity.user.name.slice(0,1))}</span><div>${safe(identity.user.name)}<small>${safe(auth.label)}身份 · 服务器保存</small></div>`;
   document.querySelector('.local-badge').innerHTML=`<i></i> ${safe(auth.label)}已连接 · 个人工作记录`;document.querySelector('.workspace-label span').textContent='公司记录';
   let refreshing=false;

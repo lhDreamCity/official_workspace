@@ -44,10 +44,13 @@
 | 能力 | 说明 |
 |---|---|
 | 浏览 | 列表 / 图标两种视图，全库搜索（文件名 + 登记条目一起搜） |
-| 预览 | 宽屏常驻右栏、窄屏居中弹层；图片直接看；Markdown 渲染（Obsidian 观感）；文本类看原文 |
+| 预览 | 宽屏常驻右栏、窄屏居中弹层；图片直接看；Markdown 渲染（Obsidian 观感）；文本类看原文；**云端大文件的视频 / 音频 / 图片 / PDF 也能内联播放或查看**（服务端重写响应头绕开 COS 的强制下载，支持拖进度条） |
 | 上传 | 拖拽文件、拖拽**整个文件夹**、或按钮选文件 / 选文件夹，目录层级原样保留 |
 | 整理 | 新建文件夹（**位置可选**：库根 → 新建一级目录，或任一级目录 → 建子目录）、重命名、移动 |
 | 署名 | 上传时贴署名标签（谁传的）；**目录与文件都能署名**，署名跟着移动走，一经署名不可改 |
+| 复制 / 剪切 / 粘贴 | 快捷键 `Ctrl+C / X / V`（Mac 用 `⌘`），配合 `Ctrl+A` 全选、`Esc` 取消选择；也可右键或点工具条。复制是复制（原件留着、可重复粘贴），剪切是移动（粘贴后原位消失）。**同一文件夹内不允许重名**，不做覆盖也不自动改名；跨文件夹允许同内容 |
+| 下载 | 两条通道：**云端大文件走 COS 签名直链**（浏览器直连，不吃本站带宽，实测 6.3 MB/s）；仓库内文件与文件夹走本站（单文件直传，文件夹**流式打包 zip**，含空目录，实测 0.68 MB/s）。入口：预览面板「⬇ 下载」、行菜单、工具条「⬇ 下载」、空白右键「下载当前文件夹」、`Ctrl/⌘+S`。文件夹与多选下载前先弹**体积 + 预计耗时**（按实测吞吐算），超过 80MB 交给浏览器原生下载 |
+| 异步打包 | 大包（≥8MB）默认走**后台打包 → 传云 → 给直链**：任务在服务端跑，关掉页面也继续，完成后拿到的链接直连 COS（7 天有效）；同一份内容（按路径 + 大小 + mtime 指纹）再下**不重打不重传**，秒回直链。进度分「打包 / 上传 / 已就绪」三段，可取消（断掉上传，COS 不留半截对象）。工具条「⏳ 打包中 / ⬇ 已打包」是入口，任务记录落 `/data/downloads` |
 | 不做 | **没有删除**。接口层不提供任何删除/清空能力，避免误操作 |
 
 ### 3. 设置
@@ -142,8 +145,9 @@ dreamcity_work/
 │
 ├─ library/                     库服务（library，端口 3001）
 │  ├─ server.mjs                入口：复用 app 的登录态
-│  ├─ library.mjs               核心：目录树 / 上传 / 文件操作 / git 提交
-│  └─ cos.mjs                   腾讯云 COS 存取（签名、对象 key 规则）
+│  ├─ library.mjs               核心：目录树 / 上传 / 文件操作 / git 提交 / 下载任务
+│  ├─ zip.mjs                   流式 ZIP 打包（零依赖，数据描述符写法）
+│  └─ cos.mjs                   腾讯云 COS 存取（签名、对象 key 规则、流式 PUT）
 │
 ├─ public/                      前端（纯静态，无构建步骤）
 │  ├─ index.html                页面骨架（压缩成 7 行）
@@ -251,9 +255,18 @@ sed -i "s|bootstrap.js?v=[a-f0-9]*|bootstrap.js?v=$(md5sum public/bootstrap.js |
 | GET | `/api/library/health` | 健康探针 |
 | GET | `/api/library/tree` | 目录树 + 署名登记 + 下拉选项（Gitee 仓与 COS 条目合并成一张视图） |
 | GET | `/api/library/file` | 文件预览（文本 / 图片） |
+| GET | `/api/library/cos` | 换云端链接：默认预览用（`direct` 签名直链或本站代理），`dl=1` 返回附件直链 |
+| GET | `/api/library/cos/stream` | 代理转发云端对象（重写响应头 + 透传 Range，视频可拖进度条） |
+| GET | `/api/library/download` | 仓库内单文件下载（`Content-Disposition: attachment`，中文名走 `filename*`） |
+| GET | `/api/library/zip` | 文件夹 / 多选打包下载；`?path=a&path=b`，加 `plan=1` 只返回体积与预计耗时 |
+| POST | `/api/library/zipjob` | 建后台打包任务（body `{paths}`）；同一份内容命中已有任务时返回 `hit:true` 与旧任务 |
+| GET | `/api/library/zipjob?id=` | 任务进度（`status/pct/phase`），就绪后带 COS 直链（每次现签，7 天有效） |
+| GET | `/api/library/zipjobs` | 最近 20 条任务（刷新页面后仍能取回已打好的包） |
+| POST | `/api/library/zipjob/cancel` | 取消任务（body `{id}`）：排队中直接作废，上传中断请求 |
 | POST | `/api/upload` | 上传（multipart，支持相对路径带层级、空目录清单、署名标签） |
 | POST | `/api/library/mkdir` | 新建文件夹 |
 | POST | `/api/library/move` | 移动 / 重命名 |
+| POST | `/api/library/paste` | 复制 / 剪切粘贴（两阶段：先校验成计划，全过才动盘） |
 | POST | `/api/library/tag` | 贴署名（贴上后不可改） |
 
 **路由归属**：Caddy 里 `/api/library/*` 和 `/api/upload*` 走 library，其余 `/api/*` 和 `/auth/*` 走 app。库的接口**没有删除类端点**。
@@ -286,7 +299,7 @@ sed -i "s|bootstrap.js?v=[a-f0-9]*|bootstrap.js?v=$(md5sum public/bootstrap.js |
 | 6 | `hub.js` | 把 portal 的本地入口升级为公司共享登记；重写首页为个人驾驶舱（含「工作数据」模块） |
 | 7 | `journal-ui.js` | 首页视觉（品牌海报） |
 | 8–11 | `vendor/marked.js`、`purify.js`、`highlight.js`、`hljs-langs.js` | Markdown 渲染（全部本地，不连 CDN） |
-| 12 | `library-ui.js` | 资料库页（三栏 + 登记分组 + 拖拽入库 + 预览 + 搜索） |
+| 12 | `library-ui.js` | 资料库页（三栏 + 登记分组 + 拖拽入库 + 预览 + 下载 + 搜索） |
 
 **导航现在只有一处来源**：`portal.js` 里的 `nav.innerHTML`。`hub.js` / `library-ui.js` 不再往导航里追加栏目 —— 这是收敛后的结果，以后加栏目改那一个地方。
 

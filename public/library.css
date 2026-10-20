@@ -21,6 +21,9 @@
 /* 主容器：Finder 式窗口 —— 侧栏浅灰 / 列表纯白 / 预览右栏，三栏共用一个圆角卡片 */
 .lib-layout{display:grid;grid-template-columns:236px minmax(0,1fr);align-items:stretch;background:#fff;border:1px solid #e3e6ea;border-radius:12px;overflow:hidden}
 .lib-layout.has-preview{grid-template-columns:236px minmax(0,1fr) minmax(300px,420px)}
+/* 媒体预览（视频 / PDF / 图片）把第三栏放宽一点；再宽就会把左侧列表挤到列名截断。
+   要看满屏画面用播放器自带的全屏按钮，不靠挤列表。 */
+.lib-layout.has-preview.is-media{grid-template-columns:236px minmax(0,1fr) minmax(320px,460px)}
 .lib-tree{background:#f6f7f9;border:none;border-right:1px solid #e7eaee;border-radius:0;padding:12px 8px 18px;max-height:72vh;overflow:auto;margin:0;scrollbar-width:thin;scrollbar-color:#c3ccd8 transparent}
 .lib-tree::-webkit-scrollbar{width:8px}
 .lib-tree::-webkit-scrollbar-thumb{background:#c9d2dc;border-radius:4px}
@@ -117,6 +120,39 @@
 .lib-prompt-body select:focus{border-color:#2f5d8a;box-shadow:0 0 0 3px rgba(47,93,138,.12)}
 .lib-prompt-body .lib-hint{margin:0;min-height:16px;line-height:1.5;word-break:break-word}
 .lib-prompt-actions{display:flex;justify-content:flex-end;gap:10px;padding:6px 18px 16px}
+/* 下载预估弹窗：左标签右数值，数字走等宽，一眼看清「多大、多久」 */
+.lib-dl-body{padding:14px 18px 0}
+.lib-dl-row{display:flex;justify-content:space-between;align-items:baseline;gap:18px;padding:8px 0;border-bottom:1px solid #eef2f6;font-size:13.5px}
+.lib-dl-row:last-of-type{border-bottom:none}
+.lib-dl-row span{color:#829ab1;flex:0 0 auto}
+.lib-dl-row b{color:#102a43;font-variant-numeric:tabular-nums;text-align:right;word-break:break-all}
+.lib-dl-body .lib-hint{margin:8px 0 2px;color:#829ab1;font-size:12px;line-height:1.65;padding-bottom:10px}
+/* 两种下载方式：直接下 / 云端打包给直链。选中项左边一条蓝条 + 浅底，不是小圆点那种需要瞄准的东西 */
+.lib-dl-mode{display:flex;flex-direction:column;gap:8px;padding:10px 0 4px}
+.lib-dl-opt{display:flex;align-items:flex-start;gap:10px;border:1px solid #e4ebf3;border-left:3px solid transparent;border-radius:10px;padding:10px 12px;cursor:pointer;background:#fbfcfd}
+.lib-dl-opt:hover{border-color:#c9d8e6}
+.lib-dl-opt.on{border-color:#2f5d8a;border-left-color:#2f5d8a;background:#f2f7fc}
+.lib-dl-opt input{position:absolute;opacity:0;pointer-events:none}
+.lib-dl-opt span{display:flex;flex-direction:column;gap:3px;min-width:0}
+.lib-dl-opt b{font-size:13.5px;color:#102a43;font-weight:600}
+.lib-dl-opt small{font-size:12px;color:#829ab1;line-height:1.5}
+/* 后台任务进度：条 + 一行字，进度条高 6px 不抢镜 */
+.lib-dl-progress{height:6px;background:#e7eaee;border-radius:4px;overflow:hidden;margin:12px 0 6px}
+.lib-dl-bar{height:100%;background:#2f5d8a;transition:width .4s ease}
+.lib-dl-pline{font-size:12.5px;color:#486581;font-variant-numeric:tabular-nums;padding:2px 0 6px}
+.lib-dl-actions{display:flex;gap:10px;padding:12px 0 2px}
+.lib-dl-actions .button{flex:0 0 auto;text-decoration:none}
+/* 已打包任务列表 */
+.lib-dl-jobs-list{max-height:320px;overflow:auto;border-top:1px solid #eef2f6;border-bottom:1px solid #eef2f6;margin:6px 0}
+.lib-dl-job{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 2px;border-bottom:1px solid #eef2f6;font-size:13px}
+.lib-dl-job:last-child{border-bottom:none}
+.lib-dl-jobmain{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1 1 auto}
+.lib-dl-jobmain b{color:#102a43;font-weight:600;word-break:break-all}
+.lib-dl-jobmain small{color:#829ab1;font-size:12px;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lib-dl-jobact{flex:0 0 auto;display:flex;align-items:center;max-width:52%}
+.lib-dl-jobact .button{text-decoration:none;padding:6px 12px}
+.lib-dl-wait{color:#2f5d8a;font-size:12px;font-variant-numeric:tabular-nums}
+.lib-dl-fail{color:#9b2c2c;font-size:12px;white-space:nowrap}
 
 /* 图标视图 */
 .lib-list-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:12px;background:transparent;border:none;border-radius:0}
@@ -137,6 +173,12 @@
 .lib-preview-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid #e7eaee;background:#fbfcfd;position:sticky;top:0;z-index:2}
 .lib-preview-meta{font-size:12px;color:#829ab1;margin-top:4px;word-break:break-all}
 .lib-preview-body{padding:16px;overflow:visible}
+.lib-preview-tools{display:flex;gap:8px;align-items:center;flex:0 0 auto}
+/* 云端文件的内联预览：视频给黑底 + 圆角，PDF 用整块 iframe */
+.lib-video{width:100%;max-height:58vh;border-radius:8px;background:#0d1117;display:block}
+.lib-audio{width:100%;display:block;margin:6px 0}
+.lib-image{max-width:100%;border-radius:8px;display:block}
+.lib-frame{width:100%;height:58vh;border:0;border-radius:8px;background:#fff}
 .lib-pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-word;color:#243b53;margin:0}
 /* Markdown 渲染视图：对齐 Obsidian 阅读模式的排版语言（正文 700px 行宽、属性面板、行内代码、引用块、双链、标签） */
 .lib-md{max-width:700px;margin:0 auto;font-size:16px;line-height:1.65;color:#2e3338;word-wrap:break-word;
@@ -196,3 +238,15 @@
  .lib-list-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
  .lib-head-actions{flex-wrap:wrap;gap:8px}
 }
+
+/* ---- 选中与剪贴板（复制 / 剪切 / 粘贴，快捷键 Ctrl+C/X/V，Mac 为 ⌘） ---- */
+.lib-row.is-sel{background:#e8f1fb;box-shadow:inset 3px 0 0 #2f7bd8}
+.lib-row.is-sel:hover{background:#e1eefa}
+.lib-list-grid .lib-row.is-sel{border-color:#2f7bd8;background:#eef5fc}
+.lib-row.is-cut{opacity:.42}
+.lib-row.is-cut:hover{opacity:.66}
+.lib-row.is-sel.is-cut{opacity:.66}
+.lib-menu button{display:flex;align-items:center;justify-content:space-between;gap:18px}
+.lib-menu button kbd{font:inherit;font-size:11px;line-height:1.6;color:#9fb3c8;background:#f3f6f9;border:1px solid #e7edf3;border-radius:4px;padding:0 5px}
+.lib-menu button[disabled]{opacity:.4}
+.lib-menu button[disabled]:hover{background:transparent;color:#334e68}

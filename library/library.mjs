@@ -1,10 +1,15 @@
 // 「库」核心逻辑：目录树 / 文件预览 / 上传入库（git + COS 双路由）。
 // 路由规则与 dreamcity_workspace/scripts/upload.py 完全一致。
 import {execFile} from 'node:child_process';
+import {Readable} from 'node:stream';
+import {createReadStream, createWriteStream} from 'node:fs';
 import {promisify} from 'node:util';
+import {finished} from 'node:stream/promises';
+import {createHash} from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import {loadCosConfig, cosKeyFor, putBuffer} from './cos.mjs';
+import {loadCosConfig, cosKeyFor, putBuffer, putFile, sign, objectUrl, signedGetUrl, cosKeyFromUrl} from './cos.mjs';
+import {createZipWriter, wantsDeflate} from './zip.mjs';
 
 const execFileP = promisify(execFile);
 const fail = (status, message) => Object.assign(new Error(message), {status});
@@ -24,6 +29,16 @@ const PREVIEW_IMG = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
 const ROOTS = ['projects', 'knowledge', 'workflows', 'media']; // 默认分区：库根始终显示这四项，顺序固定
 const HIDDEN_ROOTS = new Set(['scripts', 'node_modules']); // 与库内容无关的基础设施目录，不进库树
 const MIME = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml'};
+
+// 云端对象内联预览用的类型表：只有列进 COS_INLINE 的才值得内联，
+// 其余（office、压缩包等）保持浏览器的默认下载行为。
+const COS_MIME = {
+  '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm', '.mkv': 'video/x-matroska', '.avi': 'video/x-msvideo',
+  '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.aac': 'audio/aac', '.ogg': 'audio/ogg',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp', '.heic': 'image/heic',
+  '.pdf': 'application/pdf', '.txt': 'text/plain; charset=utf-8', '.md': 'text/plain; charset=utf-8',
+};
+const COS_INLINE = new Set(['.mp4', '.m4v', '.mov', '.webm', '.mkv', '.avi', '.mp3', '.m4a', '.wav', '.aac', '.ogg', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.heic', '.pdf', '.txt', '.md']);
 
 const day = () => new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit'}).format(new Date());
 const sanitize = name => String(name).replace(/[<>:\"/\\|?*\u0000-\u001f]+/g, '_').trim().slice(0, 120) || '未命名';
@@ -247,7 +262,8 @@ async function tree(user) {
     await walk(path.join(WS, root), root, 1, out, budget);
   }
   const manifest = await readManifest();
-  const cos = manifest.filter(e => e.name && e.cos);
+  // 附上对象键：前端预览时要用它去换签名链接，不必再解析整条 URL。
+  const cos = manifest.filter(e => e.name && e.cos).map(e => ({...e, key: cosKeyFromUrl(e.cos)}));
   const meta = {};
   for (const e of manifest) if (e.path) meta[e.path] = {author: e.author || '', date: e.date || ''};
   const files = out.filter(e => e.type === 'file');
@@ -282,6 +298,361 @@ async function preview(rel) {
   const type = PREVIEW_IMG.has(ext) ? (MIME[ext] || 'application/octet-stream') : 'text/plain; charset=utf-8';
   return {buf, type, ext};
 }
+
+// ---------- 云端（COS）文件预览 ----------
+// 这个桶开了「强制下载」：响应固定带 Content-Disposition: attachment 与
+// x-cos-force-download: true，连签名 URL 上的 response-content-disposition=inline 都被它盖掉
+// （2026-10-16 实测）。所以内联预览有两条路：
+//   1) 桶设置允许时 → 直接给带 inline 的签名 URL，浏览器直连 COS，不吃服务器带宽；
+//   2) 被强制下载时 → 走 /api/library/cos/stream，由服务端重写响应头再转出去。
+const normCosKey = (cfg, key) => {
+  const k = String(key || '').replace(/^\/+/, '');
+  if (!k || k.length > 300 || k.includes('..')) throw fail(400, '对象无效。');
+  if (cfg.COS_PREFIX && !k.startsWith(cfg.COS_PREFIX)) throw fail(400, '对象不在库的云端目录内。');
+  return k;
+};
+
+// 桶级设置对所有对象一致，探测一次缓存十分钟，免得每次预览都多一趟往返。
+let forceDownloadCache = {value: null, at: 0};
+async function isForceDownload(cfg, key) {
+  if (forceDownloadCache.value !== null && Date.now() - forceDownloadCache.at < 600000) return forceDownloadCache.value;
+  let v = true; // 探测失败按「被强制下载」处理：走代理更稳，只是费点带宽
+  try {
+    const r = await fetch(signedGetUrl(cfg, key, {ttl: 120}), {headers: {Range: 'bytes=0-0'}, signal: AbortSignal.timeout(8000)});
+    if (r.ok || r.status === 206) v = r.headers.get('x-cos-force-download') === 'true';
+    await r.arrayBuffer().catch(() => {});
+  } catch { /* 保持默认值 */ }
+  forceDownloadCache = {value: v, at: Date.now()};
+  return v;
+}
+
+// 前端预览用的链接。direct=true 可直接塞进 <video>/<img>；false 指向本站代理。
+// dl=true 时返回「附件」直链（大文件下载通道），依旧直连 COS，不吃本站出口带宽。
+async function cosLink(key, {dl = false} = {}) {
+  const cfg = loadCosConfig();
+  if (!cfg) throw fail(503, '云端存储未配置。');
+  const k = normCosKey(cfg, key);
+  const base = decodeURIComponent(k.split('/').pop() || '');
+  if (dl) return {key: k, url: signedGetUrl(cfg, k, {ttl: 3600, download: base}), direct: true, inline: false, name: base};
+  const inline = COS_INLINE.has(path.extname(k).toLowerCase());
+  if (!inline) return {key: k, url: signedGetUrl(cfg, k, {ttl: 3600}), direct: true, inline: false};
+  if (!(await isForceDownload(cfg, k))) {
+    return {key: k, url: signedGetUrl(cfg, k, {ttl: 3 * 3600, inline: true}), direct: true, inline: true};
+  }
+  return {key: k, url: '/api/library/cos/stream?key=' + encodeURIComponent(k), direct: false, inline: true};
+}
+
+// 代理转发：从 COS 取流、按本站规则重写响应头（内联 + 正确 MIME），并把 Range 原样透传，
+// 视频才能边下边播、拖进度条。内存占用与文件大小无关（纯流式）。
+async function cosStream(req, res, key) {
+  const cfg = loadCosConfig();
+  const bail = (code, msg) => { res.writeHead(code, {'Content-Type': 'application/json; charset=utf-8'}); res.end(JSON.stringify({error: msg})); };
+  if (!cfg) return bail(503, '云端存储未配置。');
+  let k;
+  try { k = normCosKey(cfg, key); } catch (e) { return bail(e.status || 400, e.message); }
+  const host = `${cfg.COS_BUCKET}.cos.${cfg.COS_REGION}.myqcloud.com`;
+  const headers = {host, Authorization: sign(cfg, 'GET', k, {host})};
+  if (req.headers.range) headers.Range = req.headers.range; // Range 不参与签名（q-header-list 只有 host）
+  let up;
+  try {
+    up = await fetch(objectUrl(cfg, k), {headers});
+  } catch (e) {
+    return bail(502, '取云端文件失败：' + e.message);
+  }
+  const out = {
+    'Content-Type': COS_MIME[path.extname(k).toLowerCase()] || up.headers.get('content-type') || 'application/octet-stream',
+    'Content-Disposition': 'inline',
+    'Accept-Ranges': 'bytes',
+    'Cache-Control': 'private, max-age=600',
+    'X-Content-Type-Options': 'nosniff',
+  };
+  for (const [from, to] of [['content-length', 'Content-Length'], ['content-range', 'Content-Range'], ['etag', 'ETag'], ['last-modified', 'Last-Modified']]) {
+    const v = up.headers.get(from);
+    if (v) out[to] = v;
+  }
+  res.writeHead(up.status, out);
+  if (!up.body) { res.end(); return; }
+  Readable.fromWeb(up.body).pipe(res);
+}
+
+// ---------- 下载 ----------
+// 两条通道，按「谁掏带宽」分：
+//   1) 云端大文件 → COS 签名直链（attachment），浏览器直连 COS，不消耗本站带宽。
+//      实测 6.27 MB/s（≈52 Mbps）；
+//   2) 仓库内小文件 / 文件夹打包 → 本服务流式吐出。实测出口 0.69 MB/s（6 Mbps 上限）。
+// 2026-10-20 实测：服务器 ← COS 入向 17.4 MB/s（不限速），服务器 → COS 出向 0.66 MB/s（同样受限）。
+// 所以「打包后转存 COS」只对同一份包被反复下载才划算，单次下载反而更慢，故不做。
+const EGRESS_MBPS = Number(env.EGRESS_MBPS || 6);              // 实例出口带宽（套餐）
+const EGRESS_MEASURED = Number(env.EGRESS_MEASURED_MBPS || 0.68); // 实测有效吞吐，仅用于估时
+const ZIP_MAX = Number(env.ZIP_MAX_MB || 2048) * 1024 * 1024;  // 不实现 ZIP64，超过 2GB 直接拒
+const ZIP_MAX_FILES = Number(env.ZIP_MAX_FILES || 5000);
+
+const asciiName = (n, fb = 'download') => String(n).replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_') || fb;
+// RFC 6266 / 5987：ASCII 兜底名 + UTF-8 原名，中文文件名在各大浏览器都不乱码
+const disposition = name => `attachment; filename="${asciiName(name)}"; filename*=UTF-8''${encodeURIComponent(name)}`;
+
+async function downloadFile(rel, res) {
+  checkRel(rel);
+  const target = safeJoin(rel);
+  const st = await fsp.stat(target).catch(() => { throw fail(404, '文件不存在。'); });
+  if (!st.isFile()) throw fail(400, '这是文件夹，请用「打包下载」。');
+  const name = path.basename(rel);
+  res.writeHead(200, {
+    'Content-Type': MIME[path.extname(name).toLowerCase()] || 'application/octet-stream',
+    'Content-Length': st.size,
+    'Content-Disposition': disposition(name),
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  const s = createReadStream(target);
+  s.on('error', () => res.destroy());
+  s.pipe(res);
+}
+
+// 收集待打包项。空目录单独记一条，解压后才不会凭空少一层。
+async function collectZip(rel, base, acc, budget) {
+  let items;
+  try { items = await fsp.readdir(safeJoin(rel), {withFileTypes: true}); } catch { return; }
+  for (const it of items) {
+    if (budget.left <= 0) return;
+    if (it.name.startsWith('.') || it.name.startsWith('_')) continue; // _meta/_inbox/.gitkeep 这类元数据不进包
+    const r = `${rel}/${it.name}`;
+    const entry = base ? r.slice(base.length + 1) : r;
+    if (it.isDirectory()) {
+      const before = acc.files.length;
+      await collectZip(r, base, acc, budget);
+      if (acc.files.length === before) acc.dirs.push({path: r, entry});
+    } else if (it.isFile()) {
+      const st = await fsp.stat(path.join(safeJoin(rel), it.name)).catch(() => null);
+      if (!st) continue;
+      acc.files.push({path: r, entry, size: st.size, mtime: st.mtimeMs});
+      acc.bytes += st.size;
+      budget.left -= 1;
+    }
+  }
+}
+
+async function zipPlan(paths) {
+  if (!paths.length) throw fail(400, '没有选择要打包的内容。');
+  if (paths.length > 50) throw fail(400, '一次最多打包 50 项，请分批。');
+  const clean = [...new Set(paths.map(p => checkRel(String(p || ''))))];
+  const single = clean.length === 1;
+  if (single && !(await isDirRel(clean[0]))) throw fail(400, '单个文件直接下载即可，不必打包。');
+  // 单项：以它的父目录为基准，解压出来就是「文件夹名/…」；
+  // 多项：一律以库根为基准，避免不同父目录下的同名文件互相覆盖。
+  const base = single ? (clean[0].includes('/') ? clean[0].slice(0, clean[0].lastIndexOf('/')) : '') : '';
+  const acc = {files: [], dirs: [], bytes: 0};
+  const budget = {left: ZIP_MAX_FILES};
+  for (const p of clean) {
+    if (await isDirRel(p)) {
+      const before = acc.files.length + acc.dirs.length;
+      await collectZip(p, base, acc, budget);
+      // 空文件夹也允许下载：包里放一条目录记录，解压出来就是一个空目录（与 Finder 一致）
+      if (acc.files.length + acc.dirs.length === before) acc.dirs.push({path: p, entry: base ? p.slice(base.length + 1) : p});
+    } else {
+      const st = await fsp.stat(safeJoin(p)).catch(() => null);
+      if (st?.isFile()) {
+        acc.files.push({path: p, entry: base ? p.slice(base.length + 1) : p, size: st.size, mtime: st.mtimeMs});
+        acc.bytes += st.size;
+      }
+    }
+  }
+  if (!acc.files.length && !acc.dirs.length) throw fail(400, '这里没有可打包的文件（云端大文件请到「云端大文件」里单独下载，走直连更快）。');
+  if (acc.bytes > ZIP_MAX) throw fail(413, `打包总量 ${(acc.bytes / 1048576).toFixed(0)}MB，超过 ${Math.round(ZIP_MAX / 1048576)}MB 上限，请分批下载。`);
+  const stamp = day().replaceAll('-', '');
+  const name = single ? `${clean[0].split('/').pop()}-${stamp}.zip` : `资料库-${clean.length}项-${stamp}.zip`;
+  const seconds = Math.round(acc.bytes / (EGRESS_MBPS * 1e6 / 8));
+  return {
+    name, base, paths: clean,
+    files: acc.files.length, dirs: acc.dirs.length, bytes: acc.bytes,
+    items: acc.files.map(f => f.entry),
+    list: acc, // 只在服务端内部用：真正落盘吐流的清单（对外的 files/dirs 是数字）
+    est: {mbps: EGRESS_MBPS, measuredMb: EGRESS_MEASURED, seconds}, // 前端据此显示「约 X MB / 约 Y 秒」
+  };
+}
+
+async function zipStream(plan, res) {
+  res.writeHead(200, {
+    'Content-Type': 'application/zip',
+    'Content-Disposition': disposition(plan.name),
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  const zw = createZipWriter(res);
+  try {
+    for (const d of plan.list.dirs) await zw.addDir(d.entry, safeJoin(d.path));
+    for (const f of plan.list.files) await zw.addFile(f.entry, safeJoin(f.path), wantsDeflate(f.entry));
+    await zw.finish();
+  } catch (e) {
+    if (!e.aborted) { console.error('zip failed:', e.message); res.destroy(); } // 头已发出，只能断流
+  }
+}
+
+// ---------- 后台打包任务（异步：打包 → 传云存储 → 给直链） ----------
+// 为什么异步：本站出口实测 0.68 MB/s，同步打包下载就是让人对着进度条等七分钟。
+// 反过来，先把包传上云（0.66 MB/s）、再把浏览器甩到 COS 直连（6.3 MB/s），
+// 第一次会多花一趟上传时间，但同一份内容 7 天内再下就是秒级，而且不占本站出口。
+// 产物落 /data/downloads（app_data 卷；容器根文件系统是只读的），传完即删，
+// 只留一份 json 记任务。服务重启会把残留 .part 清掉、任务标成中断。
+const JOB_DIR = env.DL_JOB_DIR || '/data/downloads';
+const JOB_TTL = Number(env.DL_JOB_TTL_HOURS || 168) * 3600 * 1000; // 直链有效期，默认 7 天
+const JOB_KEEP = Number(env.DL_JOB_KEEP || 40);                    // 最多保留多少条任务记录
+const JOB_LIVE = new Set(['queued', 'packing', 'uploading']);
+const jobs = new Map();
+let jobQueue = Promise.resolve();
+
+const newJobId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+// 内容指纹：路径 + 每个文件的大小与 mtime。同一份内容再点一次直接复用，不必重打重传。
+const jobSig = plan => createHash('sha256')
+  .update(JSON.stringify({
+    name: plan.name,
+    files: plan.list.files.map(f => [f.entry, f.size, f.mtime]),
+    dirs: plan.list.dirs.map(d => d.entry),
+  }))
+  .digest('hex').slice(0, 16);
+const jobExpired = j => Boolean(j.finishedAt) && Date.now() - j.finishedAt > JOB_TTL;
+
+function saveJob(j) {
+  const p = path.join(JOB_DIR, j.id + '.json');
+  const body = JSON.stringify(j, (k, v) => (k === 'ctrl' ? undefined : v));
+  return fsp.writeFile(p + '.tmp', body, 'utf8').then(() => fsp.rename(p + '.tmp', p)).catch(() => {});
+}
+
+function gcJobs() {
+  const all = [...jobs.values()].sort((a, b) => b.createdAt - a.createdAt);
+  all.forEach((j, i) => {
+    if (JOB_LIVE.has(j.status)) return;
+    if (i >= JOB_KEEP || jobExpired(j)) {
+      jobs.delete(j.id);
+      fsp.rm(path.join(JOB_DIR, j.id + '.json'), {force: true}).catch(() => {});
+    }
+  });
+}
+
+// 对外视图。直链每次现签：任务在有效期内随时能拿到能用的链接，不存长期凭证。
+function viewJob(j) {
+  const total = j.bytes || 0, packed = j.packed || 0, sent = j.sent || 0;
+  let pct = 0;
+  if (j.status === 'ready') pct = 100;
+  else if (j.status === 'uploading') pct = 45 + (total ? Math.min(50, (sent / total) * 50) : 0);
+  else if (j.status === 'packing') pct = total ? Math.min(45, (packed / total) * 45) : 0;
+  let url = '';
+  if (j.status === 'ready' && j.cosKey) {
+    const cfg = loadCosConfig();
+    const left = Math.floor((JOB_TTL - (Date.now() - j.finishedAt)) / 1000);
+    if (cfg && left > 60) {
+      try { url = signedGetUrl(cfg, j.cosKey, {ttl: left, download: j.name}); } catch { url = ''; }
+    }
+  }
+  return {
+    id: j.id, name: j.name, status: j.status, phase: j.phase || '', pct: Math.round(pct),
+    bytes: total, size: j.size || 0, files: j.files || 0, dirs: j.dirs || 0,
+    uploaded: sent, packed, url, error: j.error || '',
+    createdAt: j.createdAt, expiresAt: j.finishedAt ? j.finishedAt + JOB_TTL : 0,
+  };
+}
+
+async function runJob(j) {
+  const cfg = loadCosConfig();
+  const part = path.join(JOB_DIR, j.id + '.part');
+  let ws = null;
+  try {
+    if (!cfg) throw fail(503, '云端存储未配置。');
+    const plan = await zipPlan(j.paths); // 真正开打前重算一次：期间文件可能变了
+    j.bytes = plan.bytes; j.files = plan.files; j.dirs = plan.dirs; j.name = plan.name;
+    j.status = 'packing'; j.phase = '正在打包'; await saveJob(j);
+
+    ws = createWriteStream(part);
+    const zw = createZipWriter(ws);
+    const tick = setInterval(() => { j.packed = ws.bytesWritten; }, 400); // 打包进度直接读文件流计数
+    try {
+      for (const d of plan.list.dirs) await zw.addDir(d.entry, safeJoin(d.path));
+      for (const f of plan.list.files) {
+        if (j.cancel) throw fail(499, '已取消');
+        await zw.addFile(f.entry, safeJoin(f.path), wantsDeflate(f.entry));
+      }
+      if (j.cancel) throw fail(499, '已取消');
+      await zw.finish();
+      await finished(ws);
+    } finally {
+      clearInterval(tick);
+      j.packed = ws.bytesWritten;
+      ws.destroy(); // 正常结束时是空操作；中途失败则放掉文件句柄
+    }
+
+    const st = await fsp.stat(part);
+    j.size = st.size;
+    j.status = 'uploading'; j.phase = '正在上传到云存储'; await saveJob(j);
+    j.ctrl = new AbortController();
+    const key = `${cfg.COS_PREFIX}downloads/${day().replaceAll('-', '').slice(0, 6)}/${j.id}.zip`;
+    await putFile(cfg, key, part, {size: st.size, signal: j.ctrl.signal, onProgress: n => { j.sent = n; }});
+
+    j.cosKey = key; j.status = 'ready'; j.phase = '已就绪'; j.finishedAt = Date.now();
+    await saveJob(j);
+  } catch (e) {
+    j.status = 'error';
+    // 只留一行摘要：COS 的报错体是多行 XML，塞进界面只会把布局顶坏
+    const raw = (j.cancel || e.status === 499) ? '已取消' : (e.status ? e.message : '打包失败：' + (e.message || '未知错误'));
+    j.error = String(raw).split('\n')[0].slice(0, 160);
+    j.finishedAt = Date.now();
+    await saveJob(j);
+    if (!j.cancel) console.error('zip job failed:', e.message);
+  } finally {
+    delete j.ctrl;
+    await fsp.rm(part, {force: true}).catch(() => {});
+    gcJobs();
+  }
+}
+
+async function createJob(paths) {
+  if (!loadCosConfig()) throw fail(503, '云端存储未配置，无法后台打包，请用「直接下载」。');
+  const plan = await zipPlan(Array.isArray(paths) ? paths : []);
+  const sig = jobSig(plan);
+  const live = [...jobs.values()].find(j => j.sig === sig && !jobExpired(j) && (JOB_LIVE.has(j.status) || j.status === 'ready'));
+  if (live) return {hit: true, job: viewJob(live)}; // 同一份内容：直接复用，不重打不重传
+  const j = {
+    id: newJobId(), sig, name: plan.name, paths: plan.paths,
+    bytes: plan.bytes, files: plan.files, dirs: plan.dirs,
+    status: 'queued', phase: '排队中', packed: 0, sent: 0, size: 0,
+    cosKey: '', error: '', createdAt: Date.now(), finishedAt: 0,
+  };
+  jobs.set(j.id, j);
+  await saveJob(j);
+  jobQueue = jobQueue.then(() => runJob(j)).catch(() => {}); // 一次只打一个包：2 核机器不并行抢 CPU
+  return {hit: false, job: viewJob(j)};
+}
+
+function cancelJob(id) {
+  const j = jobs.get(id);
+  if (!j) throw fail(404, '任务不存在或已过期。');
+  if (!JOB_LIVE.has(j.status)) throw fail(400, '这个任务已经结束了。');
+  j.cancel = true;
+  if (j.status === 'queued') { j.status = 'error'; j.error = '已取消'; j.finishedAt = Date.now(); saveJob(j); }
+  else if (j.ctrl) j.ctrl.abort(); // 上传中：断掉请求，COS 不会留半截对象
+  return viewJob(j);
+}
+
+async function initJobs() {
+  try {
+    await fsp.mkdir(JOB_DIR, {recursive: true});
+    for (const f of await fsp.readdir(JOB_DIR)) {
+      const p = path.join(JOB_DIR, f);
+      if (f.endsWith('.part') || f.endsWith('.tmp')) { await fsp.rm(p, {force: true}).catch(() => {}); continue; }
+      if (!f.endsWith('.json')) continue;
+      try {
+        const j = JSON.parse(await fsp.readFile(p, 'utf8'));
+        if (JOB_LIVE.has(j.status)) { // 重启前正在跑的任务无法恢复（文件流已断），标成中断让用户重发
+          j.status = 'error'; j.error = '服务重启，任务已中断，请重新发起。'; j.finishedAt = Date.now();
+        }
+        jobs.set(j.id, j);
+      } catch { await fsp.rm(p, {force: true}).catch(() => {}); }
+    }
+    gcJobs();
+  } catch (e) {
+    console.error('下载任务目录不可用：', e.message);
+  }
+}
+initJobs();
 
 // ---------- 上传 ----------
 async function ensureFrontmatter(target, tag) {
@@ -339,6 +710,75 @@ async function moveOp(from, to, user) {
     if (paths.includes('_meta/authors.md')) await writeAuthors(authors);
     const ok = await commitPush(`move: ${from} → ${to}`, author, paths);
     return {committed: ok, from, to};
+  });
+}
+async function isDirRel(rel) {
+  return (await fsp.stat(safeJoin(rel)).catch(() => null))?.isDirectory() || false;
+}
+// 复制 / 剪切粘贴。规则与常规文件系统一致、但只多一条：
+// 目标目录里已有同名项时**不覆盖、不自动改名**，直接报错（库里没有删除能力，覆盖等于静默丢文件）。
+// 跨目录允许同内容（复制天然如此）；source 与 destination 相同（往原目录里粘）也报错，理由同上。
+async function pasteOp(mode, items, to, user) {
+  if (mode !== 'copy' && mode !== 'cut') throw fail(400, '未知的操作类型。');
+  if (!Array.isArray(items) || !items.length) throw fail(400, '剪贴板是空的，先复制或剪切。');
+  if (items.length > 50) throw fail(400, '一次最多粘贴 50 项，请分批。');
+  const destDir = String(to || '').replace(/^\/+|\/+$/g, '');
+  if (destDir) {
+    checkRel(destDir);
+    if (!(await exists(safeJoin(destDir)))) throw fail(400, `目标目录「${destDir}」不存在。`);
+    if (!(await isDirRel(destDir))) throw fail(400, `「${destDir}」不是目录，不能作为粘贴目标。`);
+  }
+  const plan = [], seen = new Set();
+  for (const raw of items) {
+    const from = checkRel(String(raw || ''));
+    const name = from.split('/').pop();
+    checkNewName(name);
+    const dest = destDir ? `${destDir}/${name}` : name;
+    if (seen.has(dest)) throw fail(409, `选中内容里有重名项「${name}」，请分开粘贴。`);
+    seen.add(dest);
+    if (dest === from) throw fail(400, `「${name}」已经在这个位置，不用粘贴。`);
+    if (mode === 'cut') {
+      if (!from.includes('/') && dest.includes('/')) throw fail(400, `一级目录「${name}」只能在库根内改名，不能挪进子目录。`);
+      if (dest.startsWith(from + '/')) throw fail(400, `「${name}」不能移动进自身的子目录。`);
+    } else if (dest.startsWith(from + '/')) {
+      throw fail(400, `「${name}」不能复制进自身的子目录。`);
+    }
+    if (!(await exists(safeJoin(from)))) throw fail(400, `「${name}」已不在原位置，可能被别人改过，刷新后重试。`);
+    const isDir = await isDirRel(from);
+    // 库根只放一级目录：往库根粘文件会落在任何视图都看不到的地方，直接拦住
+    if (!destDir && !isDir) throw fail(400, `库根只能放一级目录，「${name}」是文件，请选一个目录粘贴。`);
+    if (await exists(safeJoin(dest))) throw fail(409, `目标位置已有同名项「${name}」。同一文件夹内不能重名。`);
+    plan.push({from, to: dest, name, isDir});
+  }
+  const author = await resolveAuthor(user.name);
+  return await enqueue(async () => {
+    await gitRecover();
+    await gitPull(); // 先同步远端，再基于最新登记表改署名，避免覆盖别人的登记
+    const authors = await loadAuthors();
+    const before = JSON.stringify(authors);
+    for (const it of plan) {
+      await fsp.mkdir(path.dirname(safeJoin(it.to)), {recursive: true});
+      if (mode === 'cut') await git('mv', it.from, it.to);
+      else await fsp.cp(safeJoin(it.from), safeJoin(it.to), {recursive: true, errorOnExist: false, force: false});
+      // 署名跟着走：副本继承原件的署名，剪切时原条目迁到新路径（目录连整棵子树）
+      for (const p of Object.keys(authors)) {
+        if (p === it.from) {
+          authors[it.to] = authors[p];
+          if (mode === 'cut') delete authors[p];
+        } else if (p.startsWith(it.from + '/')) {
+          authors[`${it.to}/${p.slice(it.from.length + 1)}`] = authors[p];
+          if (mode === 'cut') delete authors[p];
+        }
+      }
+    }
+    const paths = plan.flatMap(it => [it.from, it.to]);
+    const renamed = JSON.stringify(authors) !== before;
+    if (renamed) { await writeAuthors(authors); paths.push('_meta/authors.md'); }
+    const what = plan.length === 1 ? plan[0].name : `${plan.length} 项`;
+    const where = destDir || '库根';
+    const msg = mode === 'cut' ? `move: ${what} → ${where}` : `copy: ${what} → ${where}`;
+    const ok = await commitPush(msg, author, paths);
+    return {mode, to: destDir, items: plan.map(it => it.to), committed: ok};
   });
 }
 async function tagOp(rel, value, user) {
@@ -479,6 +919,45 @@ export async function handleLibrary({path: p, method, req, res, respond, user, b
     res.end(buf);
     return true;
   }
+  if (p === '/api/library/cos' && method === 'GET') { // 换预览链接（签名直连或本站代理）
+    const u = new URL(req.url, 'http://x');
+    respond(res, 200, await cosLink(u.searchParams.get('key') || '', {dl: u.searchParams.get('dl') === '1'}));
+    return true;
+  }
+  if (p === '/api/library/cos/stream' && method === 'GET') { // 代理转发云端对象（支持 Range）
+    await cosStream(req, res, new URL(req.url, 'http://x').searchParams.get('key') || '');
+    return true;
+  }
+  if (p === '/api/library/download' && method === 'GET') { // 仓库内单文件下载（走本站，受出口带宽限制）
+    await downloadFile(new URL(req.url, 'http://x').searchParams.get('path') || '', res);
+    return true;
+  }
+  if (p === '/api/library/zip' && method === 'GET') { // 文件夹 / 多选打包：plan=1 先报体积与预计耗时
+    const u = new URL(req.url, 'http://x');
+    const plan = await zipPlan(u.searchParams.getAll('path'));
+    if (u.searchParams.get('plan') === '1') { const {list, ...pub} = plan; respond(res, 200, pub); return true; }
+    await zipStream(plan, res);
+    return true;
+  }
+  if (p === '/api/library/zipjob' && method === 'POST') { // 建后台打包任务（同一份内容复用旧任务）
+    respond(res, 200, await createJob(body?.paths));
+    return true;
+  }
+  if (p === '/api/library/zipjob' && method === 'GET') {
+    const j = jobs.get(new URL(req.url, 'http://x').searchParams.get('id') || '');
+    if (!j) throw fail(404, '任务不存在或已过期。');
+    respond(res, 200, viewJob(j));
+    return true;
+  }
+  if (p === '/api/library/zipjobs' && method === 'GET') { // 任务列表：刷新页面后也能找回已打好的包
+    gcJobs();
+    respond(res, 200, {jobs: [...jobs.values()].sort((a, b) => b.createdAt - a.createdAt).slice(0, 20).map(viewJob)});
+    return true;
+  }
+  if (p === '/api/library/zipjob/cancel' && method === 'POST') {
+    respond(res, 200, cancelJob(String(body?.id || '')));
+    return true;
+  }
   if (p === '/api/upload' && method === 'POST') {
     respond(res, 200, await upload(req, user));
     return true;
@@ -489,6 +968,10 @@ export async function handleLibrary({path: p, method, req, res, respond, user, b
   }
   if (p === '/api/library/move' && method === 'POST') {
     respond(res, 200, await moveOp(String(body.from || ''), String(body.to || ''), user));
+    return true;
+  }
+  if (p === '/api/library/paste' && method === 'POST') { // 复制 / 剪切粘贴（以站点身份，不支持删除）
+    respond(res, 200, await pasteOp(String(body.mode || ''), body.items, String(body.to || ''), user));
     return true;
   }
   if (p === '/api/library/tag' && method === 'POST') {
