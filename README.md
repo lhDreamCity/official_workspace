@@ -158,6 +158,9 @@ dreamcity_work/
 │  └─ logo.png / hero-banner.png
 │
 ├─ keys/                        Gitee 部署私钥（不进 Git，只在服务器上）
+├─ tools/                       运维脚本
+│  ├─ backup-db.mjs             SQLite 一致性快照 → 传 COS（零依赖）
+│  └─ backup-db.sh              宿主包装：在一次性容器里跑上面那个
 └─ backup-*/                    历次改动留档（不进 Git）
 ```
 
@@ -209,6 +212,18 @@ node -e 'const fs=require("fs"),c=require("crypto");const m=f=>c.createHash("md5
 ### 运维手册
 
 部署踩过的坑、两个服务的接口细节、前端指纹规范、Markdown 渲染说明，都在 **`_来源与部署说明.md`**。改库服务之前先读第七节。
+
+### 备份数据库
+
+库里是全部工作记录，**是唯一真源**。备份在服务器上跑：
+
+```bash
+ssh lhins-bo5ohr73 'cd /home/ubuntu/workbench-deploy && bash tools/backup-db.sh'
+```
+
+它做的是 `VACUUM INTO` 一致性快照（库开着 WAL，直接拷 `.sqlite` 文件会丢掉还在 WAL 里的记录 —— 库里现存的 `before-*.sqlite` 手工备份就是这么残的），校验完整性后传到 COS 的 `backups/db/` 前缀。
+
+`BACKUP_DEST=local` 是演练模式：只做快照与校验，不外传。
 
 ---
 
@@ -350,7 +365,7 @@ node -e 'const fs=require("fs"),c=require("crypto");const m=f=>c.createHash("md5
 
 | # | 问题 | 影响 | 建议 |
 |---|---|---|---|
-| 1 | **SQLite 不在备份范围** | 数据丢了不可恢复，且它是唯一真源 | 加一条定时任务把 `app_data` 卷导出到 COS 或另一台机 |
+| 1 | **SQLite 不在备份范围** | 数据丢了不可恢复，且它是唯一真源 | 备份脚本已就位（`tools/backup-db.mjs`，一致性快照 + 校验 + 传 COS），**但每日定时任务还没装上** —— 装 cron 需要人工放行"把库传到 COS"这一步 |
 | 2 | **前端层层叠加** | 8 个模块各自 patch 页面，加载顺序即依赖，改 A 崩 B | 中期把导航与 section 注册收敛成一张声明式表 |
 | 3 | **两个服务重复实现认证** | `server.mjs` 与 `library/server.mjs` 各写一遍 session 判定 + CSRF 校验 | 抽成一个共享模块 |
 | 4 | **署名机制有两个口径** | 仓库 frontmatter 用花名册 `id`（key/vndr/hao/alex），库页用 `署名标签`（Jole7/VD/大咖浩/Alex） | 写清对应关系，或统一成一套 |
