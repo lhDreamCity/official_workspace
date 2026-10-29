@@ -26,7 +26,25 @@
  $('link-kind').insertAdjacentHTML('beforeend','<option value="skill">Skill 与工作方法</option>');
  $('link-note').closest('label').after(Object.assign(document.createElement('label'),{className:'full-field',innerHTML:'使用说明 <span>选填 · Skill 或应用的操作步骤</span><textarea id="hub-instructions" maxlength="4000" placeholder="使用场景、操作步骤，或可交给 AI 的提示词"></textarea>'}));
  const settingsNote=$('settings').querySelector('.scope-note');settingsNote.id='hub-directory-status';
- if(company&&portal.links.length){const legacy=document.createElement('details');legacy.className='portal-card hub-legacy';legacy.innerHTML='<summary>原浏览器中的个人入口（尚未共享）</summary>'+portal.links.map(entry=>`<div class="hub-result"><div><strong>${esc(entry.name)}</strong><p>${esc(entry.note||entry.url)}</p></div>${externalLink(entry,'打开 ↗')}<button type="button" class="text-button" data-hub-migrate="${esc(entry.id)}">登记到公司</button></div>`).join('');const personal=[...portal.links];settingsNote.after(legacy);legacy.querySelectorAll('[data-hub-migrate]').forEach(button=>button.onclick=()=>{const entry=personal.find(e=>e.id===button.dataset.hubMigrate);startLink(entry.kind,entry.name);$('link-url').value=entry.url;$('link-note').value=entry.note||'';$('hub-instructions').value=entry.instructions||'';toast('请核对后保存；保存后公司成员可见。');});}
+ // 旧浏览器的个人入口（localStorage）只作迁移来源，公司目录是唯一真源。
+ // 列表里只留还没登记进公司的；已登记的同地址条目从本机移除，重复点不会登记两次。
+ const legacyEntries=company?[...(portal.links||[])]:[];
+ let directoryLoaded=false;
+ const legacyBox=document.createElement('details');
+ legacyBox.className='portal-card hub-legacy';
+ legacyBox.id='hub-legacy';
+ legacyBox.innerHTML='<summary>原浏览器中的个人入口（尚未共享）</summary><div class="hub-legacy-list"></div>';
+ const legacyList=legacyBox.querySelector('.hub-legacy-list');
+ const saveLegacy=links=>{try{localStorage.setItem(PORTAL_KEY,JSON.stringify({company:portal.company,links}));}catch{}};
+ const dropLegacy=entry=>{const next=legacyEntries.filter(e=>e!==entry);legacyEntries.length=0;legacyEntries.push(...next);saveLegacy(next);renderLegacy();};
+ function renderLegacy(){
+  if(!directoryLoaded)return;
+  const shared=new Set(portal.links.map(e=>e.url)),pending=legacyEntries.filter(e=>!shared.has(e.url));
+  legacyBox.hidden=!pending.length;
+  legacyList.innerHTML=pending.map(entry=>`<div class="hub-result"><div><strong>${esc(entry.name)}</strong><p>${esc(entry.note||entry.url)}</p></div>${externalLink(entry,'打开 ↗')}<button type="button" class="text-button" data-hub-migrate="${esc(entry.id)}">登记到公司</button></div>`).join('');
+  legacyList.querySelectorAll('[data-hub-migrate]').forEach(button=>button.onclick=()=>{const entry=legacyEntries.find(e=>e.id===button.dataset.hubMigrate);startLink(entry.kind,entry.name);$('link-url').value=entry.url;$('link-note').value=entry.note||'';$('hub-instructions').value=entry.instructions||'';toast('请核对后保存；保存后公司成员可见。');});
+ }
+ if(company)settingsNote.after(legacyBox);
  $('settings').querySelector('.heading p').textContent='登记应用、资料、Skill、审批和联系人。只有登记人可以修改自己的公司入口。';
  const oldStart=startLink;startLink=function(kind,name='',link=null){oldStart(kind,name,link);$('hub-instructions').value=link?.instructions||'';};
  const oldClear=clearLinkForm;clearLinkForm=function(){oldClear();$('hub-instructions').value='';};
@@ -73,7 +91,7 @@
   const old=portal.links.find(e=>e.id===editingLink),url=safeURL($('link-url').value.trim());if(!url){toast('请填写完整的 HTTP / HTTPS 地址。');return;}
   const input={kind:$('link-kind').value,name:$('link-name').value.trim(),url,note:$('link-note').value.trim(),instructions:$('hub-instructions').value.trim()};if(!input.name){toast('请填写入口名称。');return;}
   if(old){input.id=old.id;input.version=old.version;}busy=true;const button=$('link-form').querySelector('[type="submit"]');button.disabled=true;
-  try{let entry;if(company){entry=(await window.Workroom.api('/api/directory',{method:'POST',body:JSON.stringify(input)})).entry;portal.links=[entry,...portal.links.filter(e=>e.id!==entry.id)];renderPortal();}else{entry={...input,id:old?.id||crypto.randomUUID()};if(!persistPortal({...portal,links:[entry,...portal.links.filter(e=>e.id!==entry.id)]}))return;}clearLinkForm();toast(company?'入口已保存，公司成员可见。':'入口已保存到当前浏览器。');}catch(e){toast(e.message);}finally{busy=false;button.disabled=false;}
+  try{let entry;if(company){entry=(await window.Workroom.api('/api/directory',{method:'POST',body:JSON.stringify(input)})).entry;portal.links=[entry,...portal.links.filter(e=>e.id!==entry.id)];const migrated=legacyEntries.find(e=>e.url===entry.url);if(migrated)dropLegacy(migrated);renderPortal();}else{entry={...input,id:old?.id||crypto.randomUUID()};if(!persistPortal({...portal,links:[entry,...portal.links.filter(e=>e.id!==entry.id)]}))return;}clearLinkForm();toast(company?'入口已保存，公司成员可见。':'入口已保存到当前浏览器。');}catch(e){toast(e.message);}finally{busy=false;button.disabled=false;}
  };
  if(company)$('company-form').onsubmit=event=>{event.preventDefault();const name=$('company-name').value.trim();if(!name){toast('请填写工作台名称。');return;}try{const stored=JSON.parse(localStorage.getItem(PORTAL_KEY)||'null')||{links:[]};localStorage.setItem(PORTAL_KEY,JSON.stringify({...stored,company:name}));portal.company=name;renderPortal();toast('名称已保存到当前浏览器。');}catch{toast('名称未能保存，输入仍保留。');}};
  $('hub-app-search').oninput=draw;$('hub-skill-search').oninput=draw;$('material-search').oninput=draw;$('hub-search').oninput=()=>{drawSearch();bind();};
@@ -85,5 +103,5 @@
  }
  const resize=()=>{home.querySelector('.hub-approvals').open=innerWidth>760;};window.addEventListener('resize',resize);resize();
  renderPortal();route();
- if(company){const legacy=[...portal.links];portal.links=[];draw();window.Workroom.api('/api/directory').then(data=>{portal.links=data.entries;available=true;renderPortal();if(legacy.length){settingsNote.textContent+=' 此浏览器原有的个人入口仍保留在本机，需重新登记才能共享。';}}).catch(e=>{available=false;draw();toast('公司入口未能读取：'+e.message);});}
+ if(company){portal.links=[];draw();window.Workroom.api('/api/directory').then(data=>{portal.links=data.entries;available=true;const shared=new Set(data.entries.map(e=>e.url)),pending=legacyEntries.filter(e=>!shared.has(e.url));if(pending.length!==legacyEntries.length)saveLegacy(pending);legacyEntries.length=0;legacyEntries.push(...pending);directoryLoaded=true;renderPortal();renderLegacy();}).catch(e=>{available=false;draw();toast('公司入口未能读取：'+e.message);});}
 })();

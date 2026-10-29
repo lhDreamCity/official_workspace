@@ -196,6 +196,16 @@ sed -i "s|library.css?v=[a-f0-9]*|library.css?v=$(md5sum public/library.css | cu
 sed -i "s|bootstrap.js?v=[a-f0-9]*|bootstrap.js?v=$(md5sum public/bootstrap.js | cut -c1-12)|" public/index.html   # 这步最容易漏
 ```
 
+**指纹口径**：`md5(文件)` 前 12 位。`index.html` 与 `bootstrap.js` 里引用的**每一个** `?v=` 都要对得上，包括 `style.css` / `focus.css` / `auth.css` 这三个以前没指纹的。
+
+**自检**（部署前跑一遍，有输出就说明有漏的）：
+
+```bash
+node -e 'const fs=require("fs"),c=require("crypto");const m=f=>c.createHash("md5").update(fs.readFileSync("public/"+f)).digest("hex").slice(0,12);for(const h of ["bootstrap.js","index.html"]){for(const x of fs.readFileSync("public/"+h,"utf8").matchAll(/([\w./-]+\.(?:js|css|png|svg))\?v=([a-f0-9]{8,})/g)){if(fs.existsSync("public/"+x[1])&&m(x[1])!==x[2])console.log("STALE",h,x[1],x[2],"->",m(x[1]));}}'
+```
+
+> 2026-10-29 清过一轮：当时 `logo.png`、`journal-ui.js`、`interface.css`、`hub.css`、`journal-ui.css` 的指纹都过期，`style.css` / `focus.css` / `auth.css` 三个压根没指纹。
+
 ### 运维手册
 
 部署踩过的坑、两个服务的接口细节、前端指纹规范、Markdown 渲染说明，都在 **`_来源与部署说明.md`**。改库服务之前先读第七节。
@@ -343,12 +353,14 @@ sed -i "s|bootstrap.js?v=[a-f0-9]*|bootstrap.js?v=$(md5sum public/bootstrap.js |
 | 1 | **SQLite 不在备份范围** | 数据丢了不可恢复，且它是唯一真源 | 加一条定时任务把 `app_data` 卷导出到 COS 或另一台机 |
 | 2 | **前端层层叠加** | 8 个模块各自 patch 页面，加载顺序即依赖，改 A 崩 B | 中期把导航与 section 注册收敛成一张声明式表 |
 | 3 | **两个服务重复实现认证** | `server.mjs` 与 `library/server.mjs` 各写一遍 session 判定 + CSRF 校验 | 抽成一个共享模块 |
-| 4 | **仓库根有 4 个历史备份文件**（`Caddyfile.before-*`、`Caddyfile.routing-fix`、`compose.yaml.before-frontend`）被 Git 跟踪 | 噪音，容易误读为当前配置 | 清出仓库，历史留在 Git 记录里 |
-| 5 | **入口配置有两套** | `portal.js` 的个人本地入口（localStorage）与 `hub.js` 的公司共享登记（数据库）并存，带一套 legacy 迁移逻辑 | 确认全部迁完后删掉本地那套 |
-| 6 | **署名机制有两个口径** | 仓库 frontmatter 用花名册 `id`（key/vndr/hao/alex），库页用 `署名标签`（Jole7/VD/大咖浩/Alex） | 写清对应关系，或统一成一套 |
-| 7 | **COS 存放不保留目录层级** | 上传文件夹时，视频与大文件被扁平存到 `videos/年/月/`，层级只记在 manifest 里 | 需要保层级就要改对象 key 结构 |
-| 8 | **`manifest.yaml` 的头部说明与实际写入格式不符** | 文件开头声明的是 YAML 结构（`items:` 列表 + `id/title/file/provider/locator` 等字段），但实际写入方（库服务与 `scripts/upload.py`）都是**追加扁平条目**（`- path:` / `- name:`）。文件里还留着 `items: []`，两者叠在一起**已经不是合法 YAML** | 二选一：① 承认实际格式，重写头部说明并删掉 `items: []`；② 让写入方改成读写 `items:` 列表 |
-| 9 | **`_来源与部署说明.md` 是拉取记录** | 它写的是"这份代码怎么拉下来的"，不是项目文档，接手的人容易先读错 | 本 README 补上门面作用，那份专注运维细节 |
+| 4 | **署名机制有两个口径** | 仓库 frontmatter 用花名册 `id`（key/vndr/hao/alex），库页用 `署名标签`（Jole7/VD/大咖浩/Alex） | 写清对应关系，或统一成一套 |
+| 5 | **COS 存放不保留目录层级** | 上传文件夹时，视频与大文件被扁平存到 `videos/年/月/`，层级只记在 manifest 里 | 需要保层级就要改对象 key 结构 |
+| 6 | **`manifest.yaml` 的头部说明与实际写入格式不符** | 文件开头声明的是 YAML 结构（`items:` 列表 + `id/title/file/provider/locator` 等字段），但实际写入方（库服务与 `scripts/upload.py`）都是**追加扁平条目**（`- path:` / `- name:`）。文件里还留着 `items: []`，两者叠在一起**已经不是合法 YAML** | 二选一：① 承认实际格式，重写头部说明并删掉 `items: []`；② 让写入方改成读写 `items:` 列表 |
+| 7 | **`_来源与部署说明.md` 是拉取记录** | 它写的是"这份代码怎么拉下来的"，不是项目文档，接手的人容易先读错 | 本 README 补上门面作用，那份专注运维细节 |
+| 8 | **「工作台名称」只存在浏览器里** | 侧栏标题按浏览器各填各的，改一次只有自己看得见 | 挪进公司目录（同租户共享），或干脆改成固定文案 |
+| 9 | **旧页面还挂在 DOM 里** | `#materials` / `#apps` / `#organization` 三个 section 已不在导航里，`route()` 也不认这三个 hash，但 `portal.js` 仍在渲染它们 | 确认库页的分组渲染不再依赖它们的 DOM 后删掉 |
+
+> 2026-10-29 已清掉两条：仓库根的 4 个历史备份文件已移出 Git（历史仍在记录里）；入口配置的两套已收口——公司目录是唯一真源，旧浏览器的个人入口只作迁移来源，登记进公司后从本机移除。
 
 ---
 
